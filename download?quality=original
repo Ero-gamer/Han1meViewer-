@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <title>Log in - OnAir</title>
+
+  <!-- Flags scripting as available, synchronously, before <body> paints,
+       so CSS can show the right one of two mutually-exclusive elements
+       (e.g. watch.html's JS-enhanced vs. no-JS fallback video player)
+       without ever flashing both. Kept to this single line so it can't
+       itself become a reason JS-dependent content fails to appear. -->
+  <script nonce="Dm8iYzN5Smsy-4O7584JcQ">document.documentElement.classList.add("js");</script>
+
+  <link rel="stylesheet" href="/static/style.css?v=1790816615">
+
+  
+  
+  <link rel="preconnect" href="http://adsgoxhivg6hqsvc2huiw6duria5zjissacihqjaobm36kc5dpu2atid.onion" crossorigin>
+  <link rel="dns-prefetch" href="http://adsgoxhivg6hqsvc2huiw6duria5zjissacihqjaobm36kc5dpu2atid.onion">
+  
+  <link rel="preconnect" href="http://querwqh7vdw5zx3wrlgzqxz5hg5ccro252x364hoiq6vi77ruc22jxqd.onion" crossorigin>
+  <link rel="dns-prefetch" href="http://querwqh7vdw5zx3wrlgzqxz5hg5ccro252x364hoiq6vi77ruc22jxqd.onion">
+  
+  <link rel="preconnect" href="http://admaxnqwpk2gq5lylucwbakgm56w33kowhcydfo2m4jl2zwlf55fhbid.onion" crossorigin>
+  <link rel="dns-prefetch" href="http://admaxnqwpk2gq5lylucwbakgm56w33kowhcydfo2m4jl2zwlf55fhbid.onion">
+  
+
+  
+  
+  <script src="http://admate3tczgp6digew7jpzcosq52rs7anru53imwqimron27emq7dbqd.onion/js/get-banners.js" async id="script-ad-loader"></script>
+  
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <a class="brand" href="/">
+        <span class="brand-mark" aria-hidden="true"></span>
+        <span class="brand-word">ON<em>AIR</em></span>
+      </a>
+
+      <form class="search-form" method="get" action="/" data-suggest-url="/api/search/suggest" autocomplete="off">
+        <div class="search-input-wrap">
+          <input type="text" name="q" id="search-input" placeholder="Search videos&hellip;" value="" maxlength="100" role="combobox" aria-expanded="false" aria-controls="search-suggestions" aria-autocomplete="list">
+          <div class="search-suggestions" id="search-suggestions" role="listbox" hidden></div>
+        </div>
+        <select name="field" aria-label="Search by">
+          <option value="title" selected>Title</option>
+          <option value="uploader" >Uploader</option>
+          <option value="tag" >Tag</option>
+        </select>
+        <select name="length" aria-label="Video length">
+          
+            <option value="any" selected>Any length</option>
+          
+            <option value="xshort" >Under 1 min</option>
+          
+            <option value="short" >1-4 min</option>
+          
+            <option value="medium" >4-20 min</option>
+          
+            <option value="long" >20-60 min</option>
+          
+            <option value="xlong" >Over 1 hour</option>
+          
+        </select>
+        <select name="date" aria-label="Upload date">
+          
+            <option value="any" selected>Any time</option>
+          
+            <option value="day" >Past 24 hours</option>
+          
+            <option value="week" >Past week</option>
+          
+            <option value="month" >Past month</option>
+          
+            <option value="year" >Past year</option>
+          
+        </select>
+        <select name="sort" aria-label="Sort by">
+          <option value="newest" selected>Newest</option>
+          <option value="oldest" >Oldest</option>
+          <option value="most_viewed" >Most viewed</option>
+          <option value="least_viewed" >Least viewed</option>
+          <option value="longest" >Longest</option>
+          <option value="shortest" >Shortest</option>
+        </select>
+        <button type="submit">Search</button>
+      </form>
+
+      <!-- CSS-only nav toggle (checkbox hack) -- collapses the nav into
+           a hamburger dropdown below ~1100px. No JS involved, so it
+           still works with scripts disabled. -->
+      <input type="checkbox" id="nav-toggle" class="nav-toggle-input">
+      <label for="nav-toggle" class="nav-toggle-label" aria-label="Menu">
+        <span></span><span></span><span></span>
+      </label>
+      <label for="nav-toggle" class="nav-backdrop" aria-hidden="true"></label>
+
+      <nav class="nav-links">
+        <a href="/pictures">Pictures</a>
+        
+          <details class="nav-dropdown" name="nav-menu">
+            <summary>Site<span class="nav-dropdown-caret" aria-hidden="true"></span></summary>
+            <div class="nav-dropdown-panel">
+              <a href="/announcements">Announcements</a>
+              <a href="/donate">Donate</a>
+              <a href="/support">Support</a>
+            </div>
+          </details>
+          <a href="/login">Log in</a>
+          <a href="/register" class="btn-upload">Sign up</a>
+        
+      </nav>
+    </div>
+  </header>
+
+  
+
+  
+    
+      <div class="flash-wrap">
+        
+          <div class="flash">Please log in first.</div>
+        
+      </div>
+    
+  
+
+  <main class="site-main">
+    
+
+<div class="auth-page-layout">
+
+  <div class="auth-center">
+
+    <div class="ad-row">
+      
+  
+    
+    
+    
+    
+    
+    
+    <div class="ad-slot ad-slot--leaderboard">
+      <div class="ad-slot-frame" style="width:468px; height:60px; max-width:100%;">
+        
+        
+          <iframe src="http://adsgoxhivg6hqsvc2huiw6duria5zjissacihqjaobm36kc5dpu2atid.onion/468?id=127" width="468" height="60"
+                  frameborder="0" scrolling="no" fetchpriority="high"
+                  style="border:none;display:block;margin:0 auto"></iframe>
+        
+      </div>
+    </div>
+  
+
+      
+  
+    
+    
+    <div class="ad-slot ad-slot--leaderboard">
+      <div class="script-ad-slot" style="min-width:min(468px,100%); min-height:60px;">
+        <div id="banner-place-468-1"></div>
+      </div>
+    </div>
+    
+  
+
+    </div>
+
+    <!-- Login Card -->
+    <div class="auth-card">
+      <h1 class="page-title">Log in</h1>
+
+      <form method="post" class="stack-form">
+        <input type="hidden" name="csrf_token" value="f6c09a11868a5fd49f053a0d907e0ad8015b07eac78c707373e2ec4f418c37e6">
+
+        <!-- Honeypot: invisible to real visitors via plain CSS (not JS),
+             so it still works with scripting off. Its NAME changes on
+             every render (see security.new_honeypot_field_name()), not
+             just its value, so a script can't hardcode "leave field X
+             blank" -- it has to actually read this page's current field
+             name each time, same as filling the form normally would.
+             Any value here means a script filled in every field it
+             found -- see security.check_honeypot(). -->
+        <input type="text" name="hp_45e34fe9b09d" value="" tabindex="-1"
+               autocomplete="off" aria-hidden="true"
+               style="position:absolute;left:-9999px;top:-9999px;width:0;height:0;overflow:hidden;">
+
+        <label for="username">Username</label>
+        <input type="text" id="username" name="username" required autofocus autocomplete="username">
+
+        <label for="password">Password</label>
+        <input type="password" id="password" name="password" required autocomplete="current-password">
+
+        <label for="captcha_answer">Quick check &mdash; solve the equation shown:</label>
+        <img src="/captcha.png" alt="Captcha: what is 8 - 5?" width="180" height="64" class="captcha-image">
+        <input type="text" id="captcha_answer" name="captcha_answer" inputmode="numeric" required autocomplete="off">
+
+        <button type="submit" class="btn-primary">Log in</button>
+      </form>
+
+      <p class="muted">No account yet? <a href="/register">Sign up</a></p>
+    </div>
+
+    <!-- Banner 1 - was squeezed into a 250px side rail that couldn't
+         fit a 468px unit without clipping about half of it (and was
+         hidden entirely below 960px). Full-width below the card fits
+         it properly on every screen size. -->
+    <div class="ad-row">
+      
+  
+    
+    
+    <div class="ad-slot ad-slot--leaderboard">
+      <div class="script-ad-slot" style="min-width:min(468px,100%); min-height:60px;">
+        <div id="banner-place-468-2"></div>
+      </div>
+    </div>
+    
+  
+
+      
+  
+    
+    
+    <div class="ad-slot ad-slot--leaderboard">
+      <div class="script-ad-slot" style="min-width:min(468px,100%); min-height:60px;">
+        <div id="banner-place-468-3"></div>
+      </div>
+    </div>
+    
+  
+
+    </div>
+
+  </div>
+
+</div>
+
+  </main>
+
+  
+
+
+
+
+<section class="script-ads" aria-label="Advertisements">
+  <div class="script-ads-row">
+    
+      <div class="script-ad-slot" style="min-width:min(468px,100%); min-height:60px;">
+        <div id="banner-place-468-4"></div>
+      </div>
+    
+  </div>
+</section>
+
+<script nonce="Dm8iYzN5Smsy-4O7584JcQ">
+  // Fires the banner request the moment it can: the slot divs above exist now,
+  // and the loader in <head> (async, downloading in parallel since the top of
+  // the page) either has already run or runs the instant it arrives. Nothing
+  // waits for the page's own load event.
+  (function () {
+    var count = Math.min(4, 10);
+    var url = "http://admate3tczgp6digew7jpzcosq52rs7anru53imwqimron27emq7dbqd.onion/api/get-banner/5Zn2Z5vvfO54X2nq/type/468-60/count/4";
+    function run() {
+      if (typeof getBanners === "function" && count > 0) {
+        getBanners(url);
+      }
+    }
+    if (typeof getBanners === "function") { run(); return; }
+    var loader = document.getElementById("script-ad-loader");
+    if (loader) loader.addEventListener("load", run);
+  })();
+</script>
+
+
+  <footer class="site-footer">
+    <div class="footer-inner">
+      <div class="footer-brand">
+        <a class="brand" href="/">
+          <span class="brand-mark" aria-hidden="true"></span>
+          <span class="brand-word">ON<em>AIR</em></span>
+        </a>
+        <p class="footer-tagline">Self-hosted video, run by the people who watch it.</p>
+        <span class="film-strip" aria-hidden="true"></span>
+      </div>
+
+      <nav class="footer-col">
+        <h3 class="footer-col-heading">Browse</h3>
+        <a href="/">Videos</a>
+        <a href="/pictures">Pictures</a>
+        <a href="/tags">Tags</a>
+      </nav>
+
+      <nav class="footer-col">
+        <h3 class="footer-col-heading">Community</h3>
+        <a href="/announcements">Announcements</a>
+        <a href="/support">Support</a>
+        <a href="/donate">Donate</a>
+      </nav>
+
+      <div class="footer-col">
+        <h3 class="footer-col-heading">Privacy</h3>
+        <p class="footer-note">No-referrer by default. No external fonts, trackers, or CDNs &mdash; every asset on this page is served from this site.</p>
+      </div>
+    </div>
+
+    <div class="footer-bottom">
+      <div class="footer-bottom-inner">
+        <span>Self-hosted &middot; community-run</span>
+        
+        <span class="footer-bottom-sep" aria-hidden="true">&middot;</span>
+        <span>&copy; 2026 OnAir</span>
+      </div>
+    </div>
+  </footer>
+
+  <script src="/static/js/confirm-actions.js?v=1790700382" nonce="Dm8iYzN5Smsy-4O7584JcQ"></script>
+  <script src="/static/js/search-suggest.js?v=1790700382" nonce="Dm8iYzN5Smsy-4O7584JcQ"></script>
+  <script src="/static/js/thumb-preview.js?v=1790700382" nonce="Dm8iYzN5Smsy-4O7584JcQ"></script>
+  <script src="/static/js/script-ad-fit.js?v=1790816615" nonce="Dm8iYzN5Smsy-4O7584JcQ"></script>
+  <script src="/static/js/script-ad-collapse.js?v=1790816615" nonce="Dm8iYzN5Smsy-4O7584JcQ"></script>
+</body>
+</html>
