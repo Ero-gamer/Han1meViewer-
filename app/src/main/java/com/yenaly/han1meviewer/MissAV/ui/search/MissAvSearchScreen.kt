@@ -36,13 +36,17 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Category
 import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AssistChipDefaults
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledIconButton
@@ -53,9 +57,8 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.PrimaryTabRow
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
@@ -64,7 +67,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -98,6 +100,10 @@ private data class ActiveChip(
     val onClear: () -> Unit,
 )
 
+private enum class AdvancedPicker { Genre, Sort, Filter }
+
+private enum class SortFilterPicker { Sort, Filter }
+
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun MissAvSearchScreen(
@@ -116,8 +122,8 @@ fun MissAvSearchScreen(
     val hasSearched by viewModel.hasSearched.collectAsStateWithLifecycle()
     val hasMorePages by viewModel.hasMorePages.collectAsStateWithLifecycle()
 
-    var showGenreDialog by rememberSaveable { mutableStateOf(false) }
-    var showSortFilterDialog by rememberSaveable { mutableStateOf(false) }
+    var showGenreSheet by rememberSaveable { mutableStateOf(false) }
+    var showSortFilterSheet by rememberSaveable { mutableStateOf(false) }
     var recentHistory by remember { mutableStateOf(MissAvSearchHistoryRepo.load()) }
 
     val gridState = rememberLazyGridState()
@@ -173,42 +179,50 @@ fun MissAvSearchScreen(
         persistCurrentHistory()
     }
 
-    if (showGenreDialog) {
-        GenrePickerDialog(
+    if (showGenreSheet) {
+        GenreSearchSheet(
             initialGenre = selectedGenre,
+            initialSort = selectedSort,
+            initialFilter = selectedFilter,
             recentHistory = recentHistory,
             onHistoryPick = { entry ->
                 viewModel.setSearchQuery(entry.query)
                 viewModel.setSort(entry.sort)
                 viewModel.setFilter(entry.filter)
                 viewModel.setGenre(entry.genre)
-                showGenreDialog = false
+                showGenreSheet = false
                 runSearch()
             },
             onHistoryDelete = { entry ->
                 MissAvSearchHistoryRepo.remove(entry)
                 recentHistory = MissAvSearchHistoryRepo.load()
             },
-            onDismiss = { showGenreDialog = false },
-            onApplyGenre = { genre ->
+            onClearHistory = {
+                MissAvSearchHistoryRepo.clear()
+                recentHistory = emptyList()
+            },
+            onApply = { genre, sort, filter ->
                 viewModel.setGenre(genre)
-                showGenreDialog = false
+                viewModel.setSort(sort)
+                viewModel.setFilter(filter)
+                showGenreSheet = false
                 runSearch()
             },
+            onDismiss = { showGenreSheet = false },
         )
     }
 
-    if (showSortFilterDialog) {
-        SortFilterDialog(
+    if (showSortFilterSheet) {
+        SortFilterSheet(
             initialSort = selectedSort,
             initialFilter = selectedFilter,
-            onDismiss = { showSortFilterDialog = false },
             onApply = { sort, filter ->
                 viewModel.setSort(sort)
                 viewModel.setFilter(filter)
-                showSortFilterDialog = false
+                showSortFilterSheet = false
                 runSearch()
             },
+            onDismiss = { showSortFilterSheet = false },
         )
     }
 
@@ -265,6 +279,9 @@ fun MissAvSearchScreen(
                     focusRequester.requestFocus()
                 },
                 onSearch = { runSearch() },
+                onOpenGenre = { showGenreSheet = true },
+                onOpenSortFilter = { showSortFilterSheet = true },
+                showGenreButton = !hasSearched,
                 focusRequester = focusRequester,
             )
 
@@ -329,12 +346,8 @@ fun MissAvSearchScreen(
                 Box(modifier = Modifier.fillMaxSize()) {
                     when {
                         !hasSearched -> {
-                            SearchLandingPage(
+                            LandingPage(
                                 recentHistory = recentHistory,
-                                hasGenre = selectedGenre != null,
-                                genreLabel = selectedGenre?.let {
-                                    MissAvOptions.genreLabel(it) ?: it
-                                },
                                 onHistoryPick = { entry ->
                                     viewModel.setSearchQuery(entry.query)
                                     viewModel.setSort(entry.sort)
@@ -350,12 +363,6 @@ fun MissAvSearchScreen(
                                     MissAvSearchHistoryRepo.clear()
                                     recentHistory = emptyList()
                                 },
-                                onOpenGenre = { showGenreDialog = true },
-                                onClearGenre = {
-                                    viewModel.setGenre(null)
-                                },
-                                onOpenSortFilter = { showSortFilterDialog = true },
-                                onRunSearch = { runSearch() },
                             )
                         }
 
@@ -457,6 +464,9 @@ private fun SearchTopBar(
     onBack: () -> Unit,
     onClear: () -> Unit,
     onSearch: () -> Unit,
+    onOpenGenre: () -> Unit,
+    onOpenSortFilter: () -> Unit,
+    showGenreButton: Boolean,
     focusRequester: FocusRequester,
 ) {
     Surface(
@@ -527,114 +537,549 @@ private fun SearchTopBar(
                     )
                 }
             }
+
+            IconButton(onClick = onSearch) {
+                Icon(
+                    imageVector = Icons.Default.Search,
+                    contentDescription = "Search",
+                    tint = MaterialTheme.colorScheme.primary,
+                )
+            }
+
+            if (showGenreButton) {
+                IconButton(onClick = onOpenGenre) {
+                    Icon(
+                        imageVector = Icons.Default.Category,
+                        contentDescription = "Advanced search (genre)",
+                        tint = MaterialTheme.colorScheme.onSurface,
+                    )
+                }
+            }
+
+            IconButton(onClick = onOpenSortFilter) {
+                Icon(
+                    imageVector = Icons.Default.FilterList,
+                    contentDescription = "Sort & Filter",
+                    tint = MaterialTheme.colorScheme.onSurface,
+                )
+            }
         }
     }
 }
 
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun SearchLandingPage(
+private fun LandingPage(
     recentHistory: List<MissAvSearchHistoryEntry>,
-    hasGenre: Boolean,
-    genreLabel: String?,
     onHistoryPick: (MissAvSearchHistoryEntry) -> Unit,
     onHistoryDelete: (MissAvSearchHistoryEntry) -> Unit,
     onClearHistory: () -> Unit,
-    onOpenGenre: () -> Unit,
-    onClearGenre: () -> Unit,
-    onOpenSortFilter: () -> Unit,
-    onRunSearch: () -> Unit,
 ) {
+    if (recentHistory.isEmpty()) {
+        Box(
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                text = "Type to search, or use the filter icons above",
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(32.dp),
+            )
+        }
+        return
+    }
+
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
             .padding(horizontal = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
         contentPadding = PaddingValues(vertical = 16.dp),
     ) {
-        if (recentHistory.isNotEmpty()) {
-            item(key = "history_header") {
-                Row(
+        item(key = "history_header") {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = "Recent Combinations",
+                    style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier.weight(1f),
+                )
+                TextButton(onClick = onClearHistory) {
+                    Text("Clear")
+                }
+            }
+        }
+        items(
+            items = recentHistory,
+            key = { "${it.createdAt}-${it.query}-${it.genre.orEmpty()}" },
+        ) { entry ->
+            HistoryCard(
+                entry = entry,
+                onClick = { onHistoryPick(entry) },
+                onDelete = { onHistoryDelete(entry) },
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+@Composable
+private fun GenreSearchSheet(
+    initialGenre: String?,
+    initialSort: String?,
+    initialFilter: String?,
+    recentHistory: List<MissAvSearchHistoryEntry>,
+    onHistoryPick: (MissAvSearchHistoryEntry) -> Unit,
+    onHistoryDelete: (MissAvSearchHistoryEntry) -> Unit,
+    onClearHistory: () -> Unit,
+    onApply: (String?, String?, String?) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var genre by remember { mutableStateOf(initialGenre) }
+    var sort by remember { mutableStateOf(initialSort) }
+    var filter by remember { mutableStateOf(initialFilter) }
+    var activePicker by remember { mutableStateOf<AdvancedPicker?>(null) }
+
+    when (activePicker) {
+        AdvancedPicker.Genre -> GenrePickerDialog(
+            initialGenre = genre,
+            onDismiss = { activePicker = null },
+            onApply = {
+                genre = it
+                activePicker = null
+            },
+        )
+
+        AdvancedPicker.Sort -> SimplePickerDialog(
+            title = "Sort",
+            options = MissAvOptions.sortOptions,
+            selectedKey = sort,
+            onSelect = { sort = it },
+            onDismiss = { activePicker = null },
+        )
+
+        AdvancedPicker.Filter -> SimplePickerDialog(
+            title = "Filter",
+            options = MissAvOptions.filterOptions,
+            selectedKey = filter,
+            onSelect = { filter = it },
+            onDismiss = { activePicker = null },
+        )
+
+        null -> Unit
+    }
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+    ) {
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp),
+            contentPadding = PaddingValues(bottom = 24.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            item(key = "title") {
+                Text(
+                    text = "Advanced Search",
+                    style = MaterialTheme.typography.headlineSmall,
+                )
+            }
+
+            if (recentHistory.isNotEmpty()) {
+                item(key = "history_header") {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            text = "Recent Combinations",
+                            style = MaterialTheme.typography.titleMedium,
+                            modifier = Modifier.weight(1f),
+                        )
+                        TextButton(onClick = onClearHistory) {
+                            Text("Clear")
+                        }
+                    }
+                }
+                items(
+                    items = recentHistory.take(3),
+                    key = { "${it.createdAt}-${it.query}-${it.genre.orEmpty()}" },
+                ) { entry ->
+                    HistoryCard(
+                        entry = entry,
+                        onClick = { onHistoryPick(entry) },
+                        onDelete = { onHistoryDelete(entry) },
+                    )
+                }
+            }
+
+            item(key = "chips") {
+                FlowRow(
                     modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
+                    maxItemsInEachRow = 2,
+                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp),
+                ) {
+                    AdvancedChip(
+                        title = if (genre != null) {
+                            "Genre: ${MissAvOptions.genreLabel(genre) ?: genre}"
+                        } else "Genre",
+                        checked = genre != null,
+                        modifier = Modifier.weight(1f),
+                        onLongClick = if (genre != null) {
+                            { genre = null }
+                        } else null,
+                        onClick = { activePicker = AdvancedPicker.Genre },
+                    )
+                    AdvancedChip(
+                        title = if (sort != null) {
+                            "Sort: ${MissAvOptions.displayName(MissAvGroup.SORT, sort) ?: sort}"
+                        } else "Sort",
+                        checked = sort != null,
+                        modifier = Modifier.weight(1f),
+                        onLongClick = if (sort != null) {
+                            { sort = null }
+                        } else null,
+                        onClick = { activePicker = AdvancedPicker.Sort },
+                    )
+                    AdvancedChip(
+                        title = if (filter != null) {
+                            "Filter: ${
+                                MissAvOptions.displayName(MissAvGroup.FILTER, filter) ?: filter
+                            }"
+                        } else "Filter",
+                        checked = filter != null,
+                        modifier = Modifier.weight(1f),
+                        onLongClick = if (filter != null) {
+                            { filter = null }
+                        } else null,
+                        onClick = { activePicker = AdvancedPicker.Filter },
+                    )
+                    Spacer(modifier = Modifier.weight(1f))
+                }
+            }
+
+            item(key = "search_button") {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 8.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
                     Text(
-                        text = "Recent Combinations",
-                        style = MaterialTheme.typography.titleMedium,
-                        modifier = Modifier.weight(1f),
+                        text = "Long-press a chip to clear it",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                    TextButton(onClick = onClearHistory) {
-                        Text("Clear")
+                    FilledIconButton(
+                        onClick = { onApply(genre, sort, filter) },
+                        modifier = Modifier.size(60.dp),
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Search,
+                            contentDescription = "Search",
+                        )
                     }
                 }
             }
-            items(
-                items = recentHistory,
-                key = { "${it.createdAt}-${it.query}-${it.genre.orEmpty()}" },
-            ) { entry ->
-                HistoryCard(
-                    entry = entry,
-                    onClick = { onHistoryPick(entry) },
-                    onDelete = { onHistoryDelete(entry) },
-                )
-            }
         }
+    }
+}
 
-        item(key = "chips") {
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+@Composable
+private fun SortFilterSheet(
+    initialSort: String?,
+    initialFilter: String?,
+    onApply: (String?, String?) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var sort by remember { mutableStateOf(initialSort) }
+    var filter by remember { mutableStateOf(initialFilter) }
+    var activePicker by remember { mutableStateOf<SortFilterPicker?>(null) }
+
+    when (activePicker) {
+        SortFilterPicker.Sort -> SimplePickerDialog(
+            title = "Sort",
+            options = MissAvOptions.sortOptions,
+            selectedKey = sort,
+            onSelect = { sort = it },
+            onDismiss = { activePicker = null },
+        )
+
+        SortFilterPicker.Filter -> SimplePickerDialog(
+            title = "Filter",
+            options = MissAvOptions.filterOptions,
+            selectedKey = filter,
+            onSelect = { filter = it },
+            onDismiss = { activePicker = null },
+        )
+
+        null -> Unit
+    }
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            Text(
+                text = "Sort & Filter",
+                style = MaterialTheme.typography.headlineSmall,
+            )
+
             FlowRow(
                 modifier = Modifier.fillMaxWidth(),
                 maxItemsInEachRow = 2,
                 horizontalArrangement = Arrangement.spacedBy(16.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
-                SearchChip(
-                    title = if (hasGenre) "Genre: ${genreLabel.orEmpty()}" else "Genre",
-                    checked = hasGenre,
+                AdvancedChip(
+                    title = if (sort != null) {
+                        "Sort: ${MissAvOptions.displayName(MissAvGroup.SORT, sort) ?: sort}"
+                    } else "Sort",
+                    checked = sort != null,
                     modifier = Modifier.weight(1f),
-                    onLongClick = if (hasGenre) onClearGenre else null,
-                    onClick = onOpenGenre,
+                    onLongClick = if (sort != null) {
+                        { sort = null }
+                    } else null,
+                    onClick = { activePicker = SortFilterPicker.Sort },
                 )
-                SearchChip(
-                    title = "Sort & Filter",
-                    checked = false,
+                AdvancedChip(
+                    title = if (filter != null) {
+                        "Filter: ${
+                            MissAvOptions.displayName(MissAvGroup.FILTER, filter) ?: filter
+                        }"
+                    } else "Filter",
+                    checked = filter != null,
                     modifier = Modifier.weight(1f),
-                    onLongClick = null,
-                    onClick = onOpenSortFilter,
+                    onLongClick = if (filter != null) {
+                        { filter = null }
+                    } else null,
+                    onClick = { activePicker = SortFilterPicker.Filter },
                 )
                 Spacer(modifier = Modifier.weight(1f))
             }
-        }
 
-        item(key = "search_button") {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 8.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(12.dp),
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                Text(
-                    text = "Tap the search button to look up your filters",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                FilledIconButton(
-                    onClick = onRunSearch,
-                    modifier = Modifier.size(60.dp),
+                TextButton(
+                    onClick = { onApply(null, null) },
+                    modifier = Modifier.weight(1f),
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.Search,
-                        contentDescription = "Search",
-                    )
+                    Text("Reset")
+                }
+                Button(
+                    onClick = { onApply(sort, filter) },
+                    modifier = Modifier.weight(2f),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.primary,
+                    ),
+                ) {
+                    Text("Apply", fontWeight = FontWeight.SemiBold)
                 }
             }
+
+            Spacer(modifier = Modifier.height(8.dp))
         }
     }
 }
 
+@Composable
+private fun SimplePickerDialog(
+    title: String,
+    options: List<MissAvTag>,
+    selectedKey: String?,
+    onSelect: (String?) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title) },
+        text = {
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 400.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                items(
+                    items = options,
+                    key = { it.searchKey },
+                ) { tag ->
+                    val selected = tag.searchKey == selectedKey
+                    FilterChip(
+                        selected = selected,
+                        onClick = { onSelect(if (selected) null else tag.searchKey) },
+                        label = { Text(tag.name) },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor =
+                                MaterialTheme.colorScheme.primaryContainer,
+                            selectedLabelColor =
+                                MaterialTheme.colorScheme.onPrimaryContainer,
+                        ),
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                TextButton(onClick = { onSelect(null) }) {
+                    Text("Reset")
+                }
+                TextButton(onClick = onDismiss) {
+                    Text("Done")
+                }
+            }
+        },
+    )
+}
+
+@Composable
+private fun GenrePickerDialog(
+    initialGenre: String?,
+    onDismiss: () -> Unit,
+    onApply: (String?) -> Unit,
+) {
+    var selected by remember { mutableStateOf(initialGenre) }
+    var openGroup by remember { mutableStateOf<String?>(null) }
+
+    val groups = remember { MissAvOptions.genreGroupNames }
+    val genresByGroup = remember {
+        MissAvOptions.genreOptions.groupBy { it.group.orEmpty() }
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(if (openGroup == null) "Genre" else openGroup.orEmpty()) },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 420.dp),
+            ) {
+                if (openGroup == null) {
+                    LazyColumn(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        items(
+                            items = groups,
+                            key = { it },
+                        ) { group ->
+                            val selectedGroup = selected != null &&
+                                    genresByGroup[group].orEmpty().any {
+                                        it.searchKey == selected
+                                    }
+                            Surface(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { openGroup = group },
+                                color = if (selectedGroup) {
+                                    MaterialTheme.colorScheme.secondaryContainer
+                                } else {
+                                    MaterialTheme.colorScheme.surfaceContainerLow
+                                },
+                                shape = RoundedCornerShape(10.dp),
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 12.dp, vertical = 12.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = group,
+                                            style = MaterialTheme.typography.bodyLarge,
+                                            fontWeight = if (selectedGroup) FontWeight.SemiBold
+                                            else FontWeight.Normal,
+                                        )
+                                        Text(
+                                            text = "${genresByGroup[group].orEmpty().size} genres",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                    }
+                                    Icon(
+                                        imageVector = Icons.Default.KeyboardArrowDown,
+                                        contentDescription = null,
+                                    )
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    LazyColumn(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        items(
+                            items = genresByGroup[openGroup].orEmpty(),
+                            key = { it.searchKey },
+                        ) { tag ->
+                            val isSelected = tag.searchKey == selected
+                            FilterChip(
+                                selected = isSelected,
+                                onClick = {
+                                    selected = if (isSelected) null else tag.searchKey
+                                },
+                                label = { Text(tag.name) },
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = FilterChipDefaults.filterChipColors(
+                                    selectedContainerColor =
+                                        MaterialTheme.colorScheme.primaryContainer,
+                                    selectedLabelColor =
+                                        MaterialTheme.colorScheme.onPrimaryContainer,
+                                ),
+                            )
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (openGroup != null) {
+                    TextButton(onClick = { openGroup = null }) {
+                        Text("Back")
+                    }
+                } else {
+                    TextButton(onClick = {
+                        selected = null
+                        onApply(null)
+                    }) {
+                        Text("Reset")
+                    }
+                }
+                TextButton(onClick = { onApply(selected) }) {
+                    Text("Apply")
+                }
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        },
+    )
+}
+
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun SearchChip(
+private fun AdvancedChip(
     title: String,
     checked: Boolean,
     modifier: Modifier = Modifier,
@@ -730,328 +1175,6 @@ private fun HistoryCard(
             }
         }
     }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun GenrePickerDialog(
-    initialGenre: String?,
-    recentHistory: List<MissAvSearchHistoryEntry>,
-    onHistoryPick: (MissAvSearchHistoryEntry) -> Unit,
-    onHistoryDelete: (MissAvSearchHistoryEntry) -> Unit,
-    onDismiss: () -> Unit,
-    onApplyGenre: (String?) -> Unit,
-) {
-    var selectedGenre by remember { mutableStateOf(initialGenre) }
-    var openGroup by remember { mutableStateOf<String?>(null) }
-    var showHistoryTab by remember { mutableStateOf(false) }
-
-    val groups = remember { MissAvOptions.genreGroupNames }
-    val genresByGroup = remember { MissAvOptions.genreOptions.groupBy { it.group.orEmpty() } }
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(if (openGroup == null) "Genre" else openGroup.orEmpty()) },
-        text = {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(max = 440.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    FilterChip(
-                        selected = !showHistoryTab,
-                        onClick = { showHistoryTab = false },
-                        label = { Text("Genres") },
-                    )
-                    FilterChip(
-                        selected = showHistoryTab,
-                        onClick = { showHistoryTab = true },
-                        label = { Text("History (${recentHistory.size})") },
-                    )
-                }
-
-                if (showHistoryTab) {
-                    if (recentHistory.isEmpty()) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(160.dp),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            Text(
-                                text = "No recent history yet",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                    } else {
-                        LazyColumn(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .heightIn(max = 360.dp),
-                            verticalArrangement = Arrangement.spacedBy(6.dp),
-                        ) {
-                            items(
-                                items = recentHistory,
-                                key = { "${it.createdAt}-${it.query}-${it.genre.orEmpty()}" },
-                            ) { entry ->
-                                Surface(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    shape = RoundedCornerShape(10.dp),
-                                    color = MaterialTheme.colorScheme.surfaceContainerLow,
-                                    onClick = { onHistoryPick(entry) },
-                                ) {
-                                    Row(
-                                        modifier = Modifier.padding(12.dp),
-                                        verticalAlignment = Alignment.CenterVertically,
-                                    ) {
-                                        Column(modifier = Modifier.weight(1f)) {
-                                            Text(
-                                                text = entry.query.ifBlank { "Filtered search" },
-                                                style = MaterialTheme.typography.titleSmall,
-                                                maxLines = 1,
-                                                overflow = TextOverflow.Ellipsis,
-                                            )
-                                            val sub = buildList {
-                                                entry.sort?.let { add("Sort: $it") }
-                                                entry.filter?.let { add("Filter: $it") }
-                                                entry.genre?.let { add("Genre: $it") }
-                                            }.joinToString(" · ")
-                                            if (sub.isNotBlank()) {
-                                                Text(
-                                                    text = sub,
-                                                    style = MaterialTheme.typography.labelSmall,
-                                                    maxLines = 1,
-                                                    overflow = TextOverflow.Ellipsis,
-                                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                                )
-                                            }
-                                        }
-                                        IconButton(
-                                            onClick = { onHistoryDelete(entry) },
-                                            modifier = Modifier.size(32.dp),
-                                        ) {
-                                            Icon(
-                                                imageVector = Icons.Default.Clear,
-                                                contentDescription = "Remove",
-                                                modifier = Modifier.size(16.dp),
-                                            )
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                } else if (openGroup == null) {
-                    LazyColumn(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .heightIn(max = 360.dp),
-                        verticalArrangement = Arrangement.spacedBy(6.dp),
-                    ) {
-                        items(
-                            items = groups,
-                            key = { it },
-                        ) { group ->
-                            val selected = selectedGenre != null &&
-                                    MissAvOptions.genreOptions.firstOrNull {
-                                        it.searchKey == selectedGenre
-                                    }?.group == group
-                            Surface(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable { openGroup = group },
-                                color = if (selected) {
-                                    MaterialTheme.colorScheme.secondaryContainer
-                                } else {
-                                    MaterialTheme.colorScheme.surfaceContainerLow
-                                },
-                                shape = RoundedCornerShape(10.dp),
-                            ) {
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(horizontal = 12.dp, vertical = 12.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                ) {
-                                    Column(modifier = Modifier.weight(1f)) {
-                                        Text(
-                                            text = group,
-                                            style = MaterialTheme.typography.bodyLarge,
-                                            fontWeight = if (selected) FontWeight.SemiBold
-                                            else FontWeight.Normal,
-                                        )
-                                        Text(
-                                            text = "${genresByGroup[group].orEmpty().size} genres",
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        )
-                                    }
-                                    Icon(
-                                        Icons.Default.KeyboardArrowDown,
-                                        contentDescription = null,
-                                    )
-                                }
-                            }
-                        }
-                    }
-                } else {
-                    val groupTags = genresByGroup[openGroup].orEmpty()
-                    LazyColumn(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .heightIn(max = 360.dp),
-                        verticalArrangement = Arrangement.spacedBy(6.dp),
-                    ) {
-                        items(
-                            items = groupTags,
-                            key = { it.searchKey },
-                        ) { tag ->
-                            val selected = tag.searchKey == selectedGenre
-                            FilterChip(
-                                selected = selected,
-                                onClick = {
-                                    selectedGenre =
-                                        if (selected) null else tag.searchKey
-                                },
-                                label = { Text(tag.name) },
-                                modifier = Modifier.fillMaxWidth(),
-                                colors = FilterChipDefaults.filterChipColors(
-                                    selectedContainerColor =
-                                        MaterialTheme.colorScheme.primaryContainer,
-                                    selectedLabelColor =
-                                        MaterialTheme.colorScheme.onPrimaryContainer,
-                                ),
-                            )
-                        }
-                    }
-                }
-            }
-        },
-        confirmButton = {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                if (openGroup != null) {
-                    TextButton(onClick = { openGroup = null }) {
-                        Text("Back")
-                    }
-                } else {
-                    TextButton(onClick = {
-                        selectedGenre = null
-                        onApplyGenre(null)
-                    }) {
-                        Text("Reset")
-                    }
-                }
-                TextButton(onClick = { onApplyGenre(selectedGenre) }) {
-                    Text("Apply")
-                }
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Cancel") }
-        },
-    )
-}
-
-@Composable
-private fun SortFilterDialog(
-    initialSort: String?,
-    initialFilter: String?,
-    onDismiss: () -> Unit,
-    onApply: (sort: String?, filter: String?) -> Unit,
-) {
-    var selectedTab by remember { mutableIntStateOf(0) }
-    var sort by remember { mutableStateOf(initialSort) }
-    var filter by remember { mutableStateOf(initialFilter) }
-
-    val sortOptions = MissAvOptions.sortOptions
-    val filterOptions = MissAvOptions.filterOptions
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Sort & Filter") },
-        text = {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(max = 440.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                PrimaryTabRow(selectedTabIndex = selectedTab) {
-                    Tab(
-                        selected = selectedTab == 0,
-                        onClick = { selectedTab = 0 },
-                        text = {
-                            Text(if (sort != null) "Sort •" else "Sort")
-                        },
-                    )
-                    Tab(
-                        selected = selectedTab == 1,
-                        onClick = { selectedTab = 1 },
-                        text = {
-                            Text(if (filter != null) "Filter •" else "Filter")
-                        },
-                    )
-                }
-
-                val options: List<MissAvTag> = if (selectedTab == 0) sortOptions else filterOptions
-                val selectedKey = if (selectedTab == 0) sort else filter
-                LazyColumn(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(max = 340.dp),
-                    verticalArrangement = Arrangement.spacedBy(6.dp),
-                ) {
-                    items(
-                        items = options,
-                        key = { it.searchKey },
-                    ) { tag ->
-                        val selected = tag.searchKey == selectedKey
-                        FilterChip(
-                            selected = selected,
-                            onClick = {
-                                if (selectedTab == 0) {
-                                    sort = if (selected) null else tag.searchKey
-                                } else {
-                                    filter = if (selected) null else tag.searchKey
-                                }
-                            },
-                            label = { Text(tag.name) },
-                            modifier = Modifier.fillMaxWidth(),
-                            colors = FilterChipDefaults.filterChipColors(
-                                selectedContainerColor =
-                                    MaterialTheme.colorScheme.primaryContainer,
-                                selectedLabelColor =
-                                    MaterialTheme.colorScheme.onPrimaryContainer,
-                            ),
-                        )
-                    }
-                }
-            }
-        },
-        confirmButton = {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                TextButton(onClick = {
-                    sort = null
-                    filter = null
-                    onApply(null, null)
-                }) {
-                    Text("Reset")
-                }
-                TextButton(onClick = { onApply(sort, filter) }) {
-                    Text("Apply")
-                }
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Cancel") }
-        },
-    )
 }
 
 @Composable
