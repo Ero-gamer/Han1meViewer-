@@ -5,8 +5,10 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -22,7 +24,8 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
@@ -40,7 +43,6 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AssistChipDefaults
-import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledIconButton
@@ -51,7 +53,6 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
@@ -355,7 +356,6 @@ fun MissAvSearchScreen(
                                 },
                                 onOpenSortFilter = { showSortFilterDialog = true },
                                 onRunSearch = { runSearch() },
-                                focusRequester = focusRequester,
                             )
                         }
 
@@ -544,9 +544,8 @@ private fun SearchLandingPage(
     onClearGenre: () -> Unit,
     onOpenSortFilter: () -> Unit,
     onRunSearch: () -> Unit,
-    focusRequester: FocusRequester,
 ) {
-    androidx.compose.foundation.lazy.LazyColumn(
+    LazyColumn(
         modifier = Modifier
             .fillMaxSize()
             .padding(horizontal = 16.dp),
@@ -633,7 +632,7 @@ private fun SearchLandingPage(
     }
 }
 
-@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun SearchChip(
     title: String,
@@ -663,7 +662,7 @@ private fun SearchChip(
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .androidx.compose.foundation.combinedClickable(
+                .combinedClickable(
                     onClick = onClick,
                     onLongClick = onLongClick,
                 )
@@ -791,14 +790,16 @@ private fun GenrePickerDialog(
                             )
                         }
                     } else {
-                        androidx.compose.foundation.lazy.LazyColumn(
+                        LazyColumn(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .heightIn(max = 360.dp),
                             verticalArrangement = Arrangement.spacedBy(6.dp),
                         ) {
-                            items(recentHistory.size) { index ->
-                                val entry = recentHistory[index]
+                            items(
+                                items = recentHistory,
+                                key = { "${it.createdAt}-${it.query}-${it.genre.orEmpty()}" },
+                            ) { entry ->
                                 Surface(
                                     modifier = Modifier.fillMaxWidth(),
                                     shape = RoundedCornerShape(10.dp),
@@ -847,14 +848,16 @@ private fun GenrePickerDialog(
                         }
                     }
                 } else if (openGroup == null) {
-                    androidx.compose.foundation.lazy.LazyColumn(
+                    LazyColumn(
                         modifier = Modifier
                             .fillMaxWidth()
                             .heightIn(max = 360.dp),
                         verticalArrangement = Arrangement.spacedBy(6.dp),
                     ) {
-                        items(groups.size) { index ->
-                            val group = groups[index]
+                        items(
+                            items = groups,
+                            key = { it },
+                        ) { group ->
                             val selected = selectedGenre != null &&
                                     MissAvOptions.genreOptions.firstOrNull {
                                         it.searchKey == selectedGenre
@@ -898,15 +901,17 @@ private fun GenrePickerDialog(
                         }
                     }
                 } else {
-                    androidx.compose.foundation.lazy.LazyColumn(
+                    val groupTags = genresByGroup[openGroup].orEmpty()
+                    LazyColumn(
                         modifier = Modifier
                             .fillMaxWidth()
                             .heightIn(max = 360.dp),
                         verticalArrangement = Arrangement.spacedBy(6.dp),
                     ) {
-                        val groupTags = genresByGroup[openGroup].orEmpty()
-                        items(groupTags.size) { index ->
-                            val tag = groupTags[index]
+                        items(
+                            items = groupTags,
+                            key = { it.searchKey },
+                        ) { tag ->
                             val selected = tag.searchKey == selectedGenre
                             FilterChip(
                                 selected = selected,
@@ -994,16 +999,18 @@ private fun SortFilterDialog(
                     )
                 }
 
-                val options = if (selectedTab == 0) sortOptions else filterOptions
+                val options: List<MissAvTag> = if (selectedTab == 0) sortOptions else filterOptions
                 val selectedKey = if (selectedTab == 0) sort else filter
-                androidx.compose.foundation.lazy.LazyColumn(
+                LazyColumn(
                     modifier = Modifier
                         .fillMaxWidth()
                         .heightIn(max = 340.dp),
                     verticalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
-                    items(options.size) { index ->
-                        val tag: MissAvTag = options[index]
+                    items(
+                        items = options,
+                        key = { it.searchKey },
+                    ) { tag ->
                         val selected = tag.searchKey == selectedKey
                         FilterChip(
                             selected = selected,
