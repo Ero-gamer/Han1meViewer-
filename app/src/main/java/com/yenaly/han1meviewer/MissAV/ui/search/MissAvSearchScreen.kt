@@ -102,7 +102,7 @@ private data class ActiveChip(
 
 private enum class AdvancedPicker { Genre, Sort, Filter }
 
-private enum class SortFilterPicker { Sort, Filter }
+private enum class SortFilterPicker { Genre, Sort, Filter }
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
@@ -123,7 +123,7 @@ fun MissAvSearchScreen(
     val hasMorePages by viewModel.hasMorePages.collectAsStateWithLifecycle()
 
     var showGenreSheet by rememberSaveable { mutableStateOf(false) }
-    var showSortFilterSheet by rememberSaveable { mutableStateOf(false) }
+    var showSortFilterDialog by rememberSaveable { mutableStateOf(false) }
     var recentHistory by remember { mutableStateOf(MissAvSearchHistoryRepo.load()) }
 
     val gridState = rememberLazyGridState()
@@ -212,31 +212,31 @@ fun MissAvSearchScreen(
         )
     }
 
-    if (showSortFilterSheet) {
-        SortFilterSheet(
+    if (showSortFilterDialog) {
+        SortFilterDialog(
+            initialGenre = selectedGenre,
             initialSort = selectedSort,
             initialFilter = selectedFilter,
-            onApply = { sort, filter ->
+            onApply = { genre, sort, filter ->
+                viewModel.setGenre(genre)
                 viewModel.setSort(sort)
                 viewModel.setFilter(filter)
-                showSortFilterSheet = false
+                showSortFilterDialog = false
                 runSearch()
             },
-            onDismiss = { showSortFilterSheet = false },
+            onDismiss = { showSortFilterDialog = false },
         )
     }
 
     val activeChips = buildList<ActiveChip> {
-        if (!hasSearched) {
-            selectedGenre?.let { key ->
-                val label = MissAvOptions.genreLabel(key) ?: key
-                add(
-                    ActiveChip("Genre: $label") {
-                        viewModel.setGenre(null)
-                        runSearch()
-                    }
-                )
-            }
+        selectedGenre?.let { key ->
+            val label = MissAvOptions.genreLabel(key) ?: key
+            add(
+                ActiveChip("Genre: $label") {
+                    viewModel.setGenre(null)
+                    runSearch()
+                }
+            )
         }
         selectedSort?.let { key ->
             val label = MissAvOptions.displayName(MissAvGroup.SORT, key) ?: key
@@ -280,7 +280,7 @@ fun MissAvSearchScreen(
                 },
                 onSearch = { runSearch() },
                 onOpenGenre = { showGenreSheet = true },
-                onOpenSortFilter = { showSortFilterSheet = true },
+                onOpenSortFilter = { showSortFilterDialog = true },
                 showGenreButton = !hasSearched,
                 focusRequester = focusRequester,
             )
@@ -322,7 +322,7 @@ fun MissAvSearchScreen(
                             onClick = {
                                 viewModel.setSort(null)
                                 viewModel.setFilter(null)
-                                if (!hasSearched) viewModel.setGenre(null)
+                                viewModel.setGenre(null)
                                 runSearch()
                             },
                             label = { Text("Clear all") },
@@ -793,17 +793,28 @@ private fun GenreSearchSheet(
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
-private fun SortFilterSheet(
+private fun SortFilterDialog(
+    initialGenre: String?,
     initialSort: String?,
     initialFilter: String?,
-    onApply: (String?, String?) -> Unit,
+    onApply: (String?, String?, String?) -> Unit,
     onDismiss: () -> Unit,
 ) {
+    var genre by remember { mutableStateOf(initialGenre) }
     var sort by remember { mutableStateOf(initialSort) }
     var filter by remember { mutableStateOf(initialFilter) }
     var activePicker by remember { mutableStateOf<SortFilterPicker?>(null) }
 
     when (activePicker) {
+        SortFilterPicker.Genre -> GenrePickerDialog(
+            initialGenre = genre,
+            onDismiss = { activePicker = null },
+            onApply = {
+                genre = it
+                activePicker = null
+            },
+        )
+
         SortFilterPicker.Sort -> SimplePickerDialog(
             title = "Sort",
             options = MissAvOptions.sortOptions,
@@ -823,79 +834,86 @@ private fun SortFilterSheet(
         null -> Unit
     }
 
-    ModalBottomSheet(
+    AlertDialog(
         onDismissRequest = onDismiss,
-        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
-        ) {
-            Text(
-                text = "Sort & Filter",
-                style = MaterialTheme.typography.headlineSmall,
-            )
-
-            FlowRow(
-                modifier = Modifier.fillMaxWidth(),
-                maxItemsInEachRow = 2,
-                horizontalArrangement = Arrangement.spacedBy(16.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp),
+        title = { Text("Sort & Filter") },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 440.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                AdvancedChip(
-                    title = if (sort != null) {
-                        "Sort: ${MissAvOptions.displayName(MissAvGroup.SORT, sort) ?: sort}"
-                    } else "Sort",
-                    checked = sort != null,
-                    modifier = Modifier.weight(1f),
-                    onLongClick = if (sort != null) {
-                        { sort = null }
-                    } else null,
-                    onClick = { activePicker = SortFilterPicker.Sort },
-                )
-                AdvancedChip(
-                    title = if (filter != null) {
-                        "Filter: ${
-                            MissAvOptions.displayName(MissAvGroup.FILTER, filter) ?: filter
-                        }"
-                    } else "Filter",
-                    checked = filter != null,
-                    modifier = Modifier.weight(1f),
-                    onLongClick = if (filter != null) {
-                        { filter = null }
-                    } else null,
-                    onClick = { activePicker = SortFilterPicker.Filter },
-                )
-                Spacer(modifier = Modifier.weight(1f))
-            }
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                TextButton(
-                    onClick = { onApply(null, null) },
-                    modifier = Modifier.weight(1f),
+                FlowRow(
+                    modifier = Modifier.fillMaxWidth(),
+                    maxItemsInEachRow = 2,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
+                    AdvancedChip(
+                        title = if (genre != null) {
+                            "Genre: ${MissAvOptions.genreLabel(genre) ?: genre}"
+                        } else "Genre",
+                        checked = genre != null,
+                        modifier = Modifier.weight(1f),
+                        onLongClick = if (genre != null) {
+                            { genre = null }
+                        } else null,
+                        onClick = { activePicker = SortFilterPicker.Genre },
+                    )
+                    AdvancedChip(
+                        title = if (sort != null) {
+                            "Sort: ${MissAvOptions.displayName(MissAvGroup.SORT, sort) ?: sort}"
+                        } else "Sort",
+                        checked = sort != null,
+                        modifier = Modifier.weight(1f),
+                        onLongClick = if (sort != null) {
+                            { sort = null }
+                        } else null,
+                        onClick = { activePicker = SortFilterPicker.Sort },
+                    )
+                    AdvancedChip(
+                        title = if (filter != null) {
+                            "Filter: ${
+                                MissAvOptions.displayName(MissAvGroup.FILTER, filter) ?: filter
+                            }"
+                        } else "Filter",
+                        checked = filter != null,
+                        modifier = Modifier.weight(1f),
+                        onLongClick = if (filter != null) {
+                            { filter = null }
+                        } else null,
+                        onClick = { activePicker = SortFilterPicker.Filter },
+                    )
+                    Spacer(modifier = Modifier.weight(1f))
+                }
+
+                Text(
+                    text = "Long-press a chip to clear it",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        },
+        confirmButton = {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                TextButton(onClick = {
+                    genre = null
+                    sort = null
+                    filter = null
+                    onApply(null, null, null)
+                }) {
                     Text("Reset")
                 }
-                Button(
-                    onClick = { onApply(sort, filter) },
-                    modifier = Modifier.weight(2f),
-                    shape = RoundedCornerShape(12.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.primary,
-                    ),
-                ) {
-                    Text("Apply", fontWeight = FontWeight.SemiBold)
+                TextButton(onClick = { onApply(genre, sort, filter) }) {
+                    Text("Apply")
                 }
             }
-
-            Spacer(modifier = Modifier.height(8.dp))
-        }
-    }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        },
+    )
 }
 
 @Composable
