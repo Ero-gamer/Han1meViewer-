@@ -43,6 +43,7 @@ import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -90,6 +91,7 @@ private data class ActiveChip(
     val onClear: () -> Unit,
 )
 
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun MissAvSearchScreen(
     initialQuery: String?,
@@ -266,7 +268,9 @@ fun MissAvSearchScreen(
 
     val activeFilterCount = setOfNotNull(selectedSort, selectedFilter).size
 
-    Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+    Box(modifier = Modifier
+        .fillMaxSize()
+        .background(MaterialTheme.colorScheme.background)) {
         Column(modifier = Modifier.fillMaxSize()) {
             SearchTopBar(
                 query = searchQuery,
@@ -458,18 +462,14 @@ fun MissAvSearchScreen(
                         }
                     }
 
-                    AnimatedVisibility(
-                        visible = showScrollToTop,
-                        enter = fadeIn() + expandVertically(),
-                        exit = fadeOut() + shrinkVertically(),
-                        modifier = Modifier
-                            .align(Alignment.BottomEnd)
-                            .padding(16.dp),
-                    ) {
+                    if (showScrollToTop) {
                         FloatingActionButton(
                             onClick = {
                                 coroutineScope.launch { gridState.scrollToItem(0) }
                             },
+                            modifier = Modifier
+                                .align(Alignment.BottomEnd)
+                                .padding(16.dp),
                         ) {
                             Icon(
                                 Icons.Default.KeyboardArrowUp,
