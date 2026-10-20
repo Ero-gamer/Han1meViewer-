@@ -115,7 +115,7 @@ fun HentaiMamaNavHost(
                 onNavigateToVideo = { code, path ->
                     if (navController.canNavigateSafely()) {
                         navController.navigateSafely(
-                            HentaiMamaVideoRoute(videoCode = code, path = path)
+                            HentaiMamaSeriesRoute(slug = code)
                         )
                     }
                 },
@@ -166,9 +166,8 @@ fun HentaiMamaNavHost(
                 onBack = { navController.popBackStack() },
                 onNavigateToVideo = { code ->
                     if (navController.canNavigateSafely()) {
-                        val path = HentaiMamaNetwork.normalizeUrl("/$code")
                         navController.navigateSafely(
-                            HentaiMamaVideoRoute(videoCode = code, path = path)
+                            HentaiMamaSeriesRoute(slug = code)
                         )
                     }
                 },

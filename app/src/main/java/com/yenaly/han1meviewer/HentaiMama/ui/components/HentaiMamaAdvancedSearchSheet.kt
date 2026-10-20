@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
@@ -68,6 +69,8 @@ private data class AdvancedChipSpec(
     val onClick: () -> Unit,
     val onClear: () -> Unit,
 )
+
+private data class GenreHit(val group: String, val genre: String)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -390,14 +393,16 @@ private fun GenreGroupPickerDialog(
     val groups = remember { HentaiMamaOptions.genreGroups.keys.toList() }
     var query by remember { mutableStateOf("") }
 
-    val visibleGroups = remember(query, groups) {
-        if (query.isBlank()) groups
-        else groups.filter { it.contains(query, ignoreCase = true) }
+    val allGenreHits = remember {
+        HentaiMamaOptions.genreGroups.entries.flatMap { (group, genres) ->
+            genres.map { GenreHit(group, it) }
+        }
     }
 
-    val directMatch = remember(query) {
-        if (query.isBlank()) null
-        else HentaiMamaOptions.genres.firstOrNull { it.equals(query.trim(), ignoreCase = true) }
+    val filteredGenreHits = remember(query, allGenreHits) {
+        val trimmed = query.trim()
+        if (trimmed.isBlank()) emptyList()
+        else allGenreHits.filter { it.genre.contains(trimmed, ignoreCase = true) }
     }
 
     AlertDialog(
@@ -405,8 +410,7 @@ private fun GenreGroupPickerDialog(
         title = { Text("Genre") },
         text = {
             Column(
-                modifier = Modifier
-                    .heightIn(max = 480.dp),
+                modifier = Modifier.heightIn(max = 520.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 OutlinedTextField(
@@ -417,7 +421,7 @@ private fun GenreGroupPickerDialog(
                         .clip(RoundedCornerShape(50)),
                     singleLine = true,
                     shape = RoundedCornerShape(50),
-                    placeholder = { Text("Search groups or genres…") },
+                    placeholder = { Text("Search genres…") },
                     leadingIcon = {
                         Icon(Icons.Default.Search, contentDescription = null)
                     },
@@ -431,83 +435,127 @@ private fun GenreGroupPickerDialog(
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                 )
 
-                if (directMatch != null) {
-                    Surface(
+                val listState = rememberLazyListState()
+
+                if (query.isBlank()) {
+                    LazyColumn(
+                        state = listState,
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clip(RoundedCornerShape(10.dp))
-                            .clickable { onSelectGenreDirectly(directMatch) },
-                        color = MaterialTheme.colorScheme.primaryContainer,
+                            .heightIn(max = 420.dp),
+                        contentPadding = PaddingValues(vertical = 4.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        items(
+                            items = groups,
+                            key = { it },
+                        ) { group ->
+                            val groupSelected = selectedKey != null &&
+                                    HentaiMamaOptions.genresInGroup(group).any { it == selectedKey }
+                            Surface(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .clickable { onPickGroup(group) },
+                                color = if (groupSelected) {
+                                    MaterialTheme.colorScheme.secondaryContainer
+                                } else {
+                                    MaterialTheme.colorScheme.surfaceContainerLow
+                                },
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(
+                                        horizontal = 12.dp,
+                                        vertical = 12.dp,
+                                    ),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = group,
+                                            style = MaterialTheme.typography.bodyLarge,
+                                            fontWeight = if (groupSelected) FontWeight.SemiBold
+                                            else FontWeight.Normal,
+                                            color = if (groupSelected) {
+                                                MaterialTheme.colorScheme.onSecondaryContainer
+                                            } else {
+                                                MaterialTheme.colorScheme.onSurface
+                                            },
+                                        )
+                                        Text(
+                                            text = "${HentaiMamaOptions.genresInGroup(group).size} genres",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                } else if (filteredGenreHits.isEmpty()) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(120.dp),
+                        contentAlignment = Alignment.Center,
                     ) {
                         Text(
-                            text = "Use genre \"$directMatch\"",
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer,
-                            modifier = Modifier.padding(
-                                horizontal = 12.dp,
-                                vertical = 12.dp,
-                            ),
+                            text = "No genres match \"$query\"",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
-                }
-
-                val listState = androidx.compose.foundation.lazy.rememberLazyListState()
-                LazyColumn(
-                    state = listState,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(max = 380.dp),
-                    contentPadding = PaddingValues(vertical = 4.dp),
-                    verticalArrangement = Arrangement.spacedBy(6.dp),
-                ) {
-                    items(
-                        items = visibleGroups,
-                        key = { it },
-                    ) { group ->
-                        val groupSelected = selectedKey != null &&
-                                HentaiMamaOptions.genresInGroup(group).any { it == selectedKey }
-                        Surface(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(10.dp))
-                                .clickable { onPickGroup(group) },
-                            color = if (groupSelected) {
-                                MaterialTheme.colorScheme.secondaryContainer
-                            } else {
-                                MaterialTheme.colorScheme.surfaceContainerLow
-                            },
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(
-                                    horizontal = 12.dp,
-                                    vertical = 12.dp,
-                                ),
-                                verticalAlignment = Alignment.CenterVertically,
+                } else {
+                    LazyColumn(
+                        state = listState,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = 420.dp),
+                        contentPadding = PaddingValues(vertical = 4.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        items(
+                            items = filteredGenreHits,
+                            key = { "${it.group}::${it.genre}" },
+                        ) { hit ->
+                            val selected = hit.genre == selectedKey
+                            Surface(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .clickable { onSelectGenreDirectly(hit.genre) },
+                                color = if (selected) {
+                                    MaterialTheme.colorScheme.secondaryContainer
+                                } else {
+                                    MaterialTheme.colorScheme.surfaceContainerLow
+                                },
                             ) {
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(
-                                        text = group,
-                                        style = MaterialTheme.typography.bodyLarge,
-                                        fontWeight = if (groupSelected) FontWeight.SemiBold
-                                        else FontWeight.Normal,
-                                        color = if (groupSelected) {
-                                            MaterialTheme.colorScheme.onSecondaryContainer
-                                        } else {
-                                            MaterialTheme.colorScheme.onSurface
-                                        },
-                                    )
-                                    Text(
-                                        text = "${HentaiMamaOptions.genresInGroup(group).size} genres",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    )
+                                Row(
+                                    modifier = Modifier.padding(
+                                        horizontal = 12.dp,
+                                        vertical = 12.dp,
+                                    ),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = hit.genre,
+                                            style = MaterialTheme.typography.bodyLarge,
+                                            fontWeight = if (selected) FontWeight.SemiBold
+                                            else FontWeight.Normal,
+                                            color = if (selected) {
+                                                MaterialTheme.colorScheme.onSecondaryContainer
+                                            } else {
+                                                MaterialTheme.colorScheme.onSurface
+                                            },
+                                        )
+                                        Text(
+                                            text = hit.group,
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                    }
                                 }
-                                Icon(
-                                    imageVector = Icons.Default.Search,
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.size(18.dp),
-                                )
                             }
                         }
                     }
@@ -558,7 +606,7 @@ private fun GenreGroupContentDialog(
             }
         },
         text = {
-            val listState = androidx.compose.foundation.lazy.rememberLazyListState()
+            val listState = rememberLazyListState()
             LazyColumn(
                 state = listState,
                 modifier = Modifier

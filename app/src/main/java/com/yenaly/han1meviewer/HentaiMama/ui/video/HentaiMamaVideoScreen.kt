@@ -6,11 +6,13 @@ import android.os.Build
 import android.util.Log
 import android.view.WindowManager
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -23,6 +25,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -659,21 +662,54 @@ private fun EpisodeSidebarRow(
         onClick = onClick,
     ) {
         Row(
-            modifier = Modifier.padding(10.dp),
+            modifier = Modifier.padding(8.dp),
             verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            Text(
-                text = episode.episodeNumber?.let { "EP ${it.toInt()}" } ?: "EP",
-                style = MaterialTheme.typography.labelMedium,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.width(48.dp),
-            )
+            Box(
+                modifier = Modifier
+                    .width(96.dp)
+                    .aspectRatio(16f / 9f)
+                    .clip(RoundedCornerShape(8.dp)),
+            ) {
+                RetryableImage(
+                    model = episode.thumb,
+                    contentDescription = episode.title,
+                    modifier = Modifier.fillMaxSize(),
+                    placeholder = painterResource(R.drawable.h_chan_loading),
+                    error = painterResource(R.drawable.h_chan_load_failed),
+                    contentScale = ContentScale.Crop,
+                )
+            }
+
             Column(modifier = Modifier.weight(1f)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = episode.episodeNumber?.let { "EP ${it.toInt()}" } ?: "EP",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.primary,
+                        fontWeight = FontWeight.Bold,
+                    )
+                    episode.rating?.let {
+                        Spacer(Modifier.width(8.dp))
+                        Icon(
+                            imageVector = Icons.Filled.Star,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(12.dp),
+                        )
+                        Spacer(Modifier.width(2.dp))
+                        Text(
+                            text = "%.1f".format(it),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                    }
+                }
                 Text(
                     text = episode.title,
                     style = MaterialTheme.typography.bodyMedium,
-                    maxLines = 1,
+                    maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                 )
                 episode.date?.let { d ->
@@ -686,8 +722,8 @@ private fun EpisodeSidebarRow(
             }
             if (episode.isCurrent) {
                 Text(
-                    text = "▶ Current",
-                    style = MaterialTheme.typography.labelSmall,
+                    text = "▶",
+                    style = MaterialTheme.typography.labelLarge,
                     color = MaterialTheme.colorScheme.primary,
                 )
             }
