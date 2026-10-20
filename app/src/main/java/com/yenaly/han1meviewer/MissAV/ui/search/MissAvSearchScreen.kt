@@ -45,8 +45,6 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AssistChipDefaults
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledIconButton
@@ -58,6 +56,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -179,6 +178,13 @@ fun MissAvSearchScreen(
         persistCurrentHistory()
     }
 
+    fun clearEverything() {
+        viewModel.resetSearch()
+        recentHistory = MissAvSearchHistoryRepo.load()
+        coroutineScope.launch { gridState.scrollToItem(0) }
+        focusRequester.requestFocus()
+    }
+
     if (showGenreSheet) {
         GenreSearchSheet(
             initialGenre = selectedGenre,
@@ -272,12 +278,7 @@ fun MissAvSearchScreen(
                 query = searchQuery,
                 onQueryChange = viewModel::setSearchQuery,
                 onBack = onBack,
-                onClear = {
-                    viewModel.resetSearch()
-                    recentHistory = MissAvSearchHistoryRepo.load()
-                    coroutineScope.launch { gridState.scrollToItem(0) }
-                    focusRequester.requestFocus()
-                },
+                onClear = { clearEverything() },
                 onSearch = { runSearch() },
                 onOpenGenre = { showGenreSheet = true },
                 onOpenSortFilter = { showSortFilterDialog = true },
@@ -323,7 +324,8 @@ fun MissAvSearchScreen(
                                 viewModel.setSort(null)
                                 viewModel.setFilter(null)
                                 viewModel.setGenre(null)
-                                runSearch()
+                                viewModel.resetSearch()
+                                coroutineScope.launch { gridState.scrollToItem(0) }
                             },
                             label = { Text("Clear all") },
                             colors = AssistChipDefaults.assistChipColors(
@@ -924,33 +926,64 @@ private fun SimplePickerDialog(
     onSelect: (String?) -> Unit,
     onDismiss: () -> Unit,
 ) {
+    var query by remember { mutableStateOf("") }
+
+    val filtered = remember(query, options) {
+        if (query.isBlank()) options
+        else options.filter { it.name.contains(query, ignoreCase = true) }
+    }
+
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(title) },
         text = {
-            LazyColumn(
+            Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .heightIn(max = 400.dp),
-                verticalArrangement = Arrangement.spacedBy(6.dp),
+                    .heightIn(max = 440.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                items(
-                    items = options,
-                    key = { it.searchKey },
-                ) { tag ->
-                    val selected = tag.searchKey == selectedKey
-                    FilterChip(
-                        selected = selected,
-                        onClick = { onSelect(if (selected) null else tag.searchKey) },
-                        label = { Text(tag.name) },
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = FilterChipDefaults.filterChipColors(
-                            selectedContainerColor =
-                                MaterialTheme.colorScheme.primaryContainer,
-                            selectedLabelColor =
-                                MaterialTheme.colorScheme.onPrimaryContainer,
-                        ),
-                    )
+                OutlinedTextField(
+                    value = query,
+                    onValueChange = { query = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    placeholder = { Text("Search ${title.lowercase()}…") },
+                    leadingIcon = {
+                        Icon(Icons.Default.Search, contentDescription = null)
+                    },
+                    trailingIcon = {
+                        if (query.isNotEmpty()) {
+                            IconButton(onClick = { query = "" }) {
+                                Icon(Icons.Default.Clear, contentDescription = "Clear")
+                            }
+                        }
+                    },
+                )
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 340.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    items(
+                        items = filtered,
+                        key = { it.searchKey },
+                    ) { tag ->
+                        val selected = tag.searchKey == selectedKey
+                        FilterChip(
+                            selected = selected,
+                            onClick = { onSelect(if (selected) null else tag.searchKey) },
+                            label = { Text(tag.name) },
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor =
+                                    MaterialTheme.colorScheme.primaryContainer,
+                                selectedLabelColor =
+                                    MaterialTheme.colorScheme.onPrimaryContainer,
+                            ),
+                        )
+                    }
                 }
             }
         },
@@ -975,10 +1008,29 @@ private fun GenrePickerDialog(
 ) {
     var selected by remember { mutableStateOf(initialGenre) }
     var openGroup by remember { mutableStateOf<String?>(null) }
+    var query by remember { mutableStateOf("") }
 
     val groups = remember { MissAvOptions.genreGroupNames }
     val genresByGroup = remember {
         MissAvOptions.genreOptions.groupBy { it.group.orEmpty() }
+    }
+
+    val filteredGroups = remember(query, groups) {
+        if (query.isBlank()) groups
+        else groups.filter { it.contains(query, ignoreCase = true) }
+    }
+
+    val filteredTagsInGroup = remember(query, openGroup, genresByGroup) {
+        val base = openGroup?.let { genresByGroup[it].orEmpty() } ?: emptyList()
+        if (query.isBlank()) base
+        else base.filter { it.name.contains(query, ignoreCase = true) }
+    }
+
+    val flatFilteredTags = remember(query, genresByGroup) {
+        if (query.isBlank()) emptyList()
+        else genresByGroup.values.flatten()
+            .filter { it.name.contains(query, ignoreCase = true) }
+            .distinctBy { it.searchKey }
     }
 
     AlertDialog(
@@ -988,83 +1040,194 @@ private fun GenrePickerDialog(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .heightIn(max = 420.dp),
+                    .heightIn(max = 460.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                if (openGroup == null) {
-                    LazyColumn(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalArrangement = Arrangement.spacedBy(6.dp),
-                    ) {
-                        items(
-                            items = groups,
-                            key = { it },
-                        ) { group ->
-                            val selectedGroup = selected != null &&
-                                    genresByGroup[group].orEmpty().any {
-                                        it.searchKey == selected
-                                    }
-                            Surface(
+                OutlinedTextField(
+                    value = query,
+                    onValueChange = { query = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    placeholder = { Text("Search genres…") },
+                    leadingIcon = {
+                        Icon(Icons.Default.Search, contentDescription = null)
+                    },
+                    trailingIcon = {
+                        if (query.isNotEmpty()) {
+                            IconButton(onClick = { query = "" }) {
+                                Icon(Icons.Default.Clear, contentDescription = "Clear")
+                            }
+                        }
+                    },
+                )
+
+                when {
+                    query.isNotBlank() -> {
+                        if (flatFilteredTags.isEmpty()) {
+                            Box(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .clickable { openGroup = group },
-                                color = if (selectedGroup) {
-                                    MaterialTheme.colorScheme.secondaryContainer
-                                } else {
-                                    MaterialTheme.colorScheme.surfaceContainerLow
-                                },
-                                shape = RoundedCornerShape(10.dp),
+                                    .height(160.dp),
+                                contentAlignment = Alignment.Center,
                             ) {
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(horizontal = 12.dp, vertical = 12.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                ) {
-                                    Column(modifier = Modifier.weight(1f)) {
-                                        Text(
-                                            text = group,
-                                            style = MaterialTheme.typography.bodyLarge,
-                                            fontWeight = if (selectedGroup) FontWeight.SemiBold
-                                            else FontWeight.Normal,
-                                        )
-                                        Text(
-                                            text = "${genresByGroup[group].orEmpty().size} genres",
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        )
-                                    }
-                                    Icon(
-                                        imageVector = Icons.Default.KeyboardArrowDown,
-                                        contentDescription = null,
+                                Text(
+                                    text = "No genres match \"$query\"",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        } else {
+                            LazyColumn(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .heightIn(max = 340.dp),
+                                verticalArrangement = Arrangement.spacedBy(6.dp),
+                            ) {
+                                items(
+                                    items = flatFilteredTags,
+                                    key = { it.searchKey },
+                                ) { tag ->
+                                    val isSelected = tag.searchKey == selected
+                                    FilterChip(
+                                        selected = isSelected,
+                                        onClick = {
+                                            selected = if (isSelected) null else tag.searchKey
+                                        },
+                                        label = {
+                                            val label = if (!tag.group.isNullOrBlank() &&
+                                                tag.group != MissAvOptions.OTHER_GROUP
+                                            ) {
+                                                "${tag.group} › ${tag.name}"
+                                            } else tag.name
+                                            Text(label)
+                                        },
+                                        modifier = Modifier.fillMaxWidth(),
+                                        colors = FilterChipDefaults.filterChipColors(
+                                            selectedContainerColor =
+                                                MaterialTheme.colorScheme.primaryContainer,
+                                            selectedLabelColor =
+                                                MaterialTheme.colorScheme.onPrimaryContainer,
+                                        ),
                                     )
                                 }
                             }
                         }
                     }
-                } else {
-                    LazyColumn(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalArrangement = Arrangement.spacedBy(6.dp),
-                    ) {
-                        items(
-                            items = genresByGroup[openGroup].orEmpty(),
-                            key = { it.searchKey },
-                        ) { tag ->
-                            val isSelected = tag.searchKey == selected
-                            FilterChip(
-                                selected = isSelected,
-                                onClick = {
-                                    selected = if (isSelected) null else tag.searchKey
-                                },
-                                label = { Text(tag.name) },
+
+                    openGroup == null -> {
+                        if (filteredGroups.isEmpty()) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(160.dp),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Text(
+                                    text = "No groups found",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        } else {
+                            LazyColumn(
                                 modifier = Modifier.fillMaxWidth(),
-                                colors = FilterChipDefaults.filterChipColors(
-                                    selectedContainerColor =
-                                        MaterialTheme.colorScheme.primaryContainer,
-                                    selectedLabelColor =
-                                        MaterialTheme.colorScheme.onPrimaryContainer,
-                                ),
-                            )
+                                verticalArrangement = Arrangement.spacedBy(6.dp),
+                            ) {
+                                items(
+                                    items = filteredGroups,
+                                    key = { it },
+                                ) { group ->
+                                    val selectedGroup = selected != null &&
+                                            genresByGroup[group].orEmpty().any {
+                                                it.searchKey == selected
+                                            }
+                                    Surface(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clickable { openGroup = group },
+                                        color = if (selectedGroup) {
+                                            MaterialTheme.colorScheme.secondaryContainer
+                                        } else {
+                                            MaterialTheme.colorScheme.surfaceContainerLow
+                                        },
+                                        shape = RoundedCornerShape(10.dp),
+                                    ) {
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(
+                                                    horizontal = 12.dp,
+                                                    vertical = 12.dp,
+                                                ),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                        ) {
+                                            Column(modifier = Modifier.weight(1f)) {
+                                                Text(
+                                                    text = group,
+                                                    style = MaterialTheme.typography.bodyLarge,
+                                                    fontWeight = if (selectedGroup) {
+                                                        FontWeight.SemiBold
+                                                    } else FontWeight.Normal,
+                                                )
+                                                Text(
+                                                    text = "${
+                                                        genresByGroup[group].orEmpty().size
+                                                    } genres",
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                )
+                                            }
+                                            Icon(
+                                                imageVector = Icons.Default.KeyboardArrowDown,
+                                                contentDescription = null,
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    else -> {
+                        if (filteredTagsInGroup.isEmpty()) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(160.dp),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Text(
+                                    text = "No genres in this group",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        } else {
+                            LazyColumn(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalArrangement = Arrangement.spacedBy(6.dp),
+                            ) {
+                                items(
+                                    items = filteredTagsInGroup,
+                                    key = { it.searchKey },
+                                ) { tag ->
+                                    val isSelected = tag.searchKey == selected
+                                    FilterChip(
+                                        selected = isSelected,
+                                        onClick = {
+                                            selected = if (isSelected) null else tag.searchKey
+                                        },
+                                        label = { Text(tag.name) },
+                                        modifier = Modifier.fillMaxWidth(),
+                                        colors = FilterChipDefaults.filterChipColors(
+                                            selectedContainerColor =
+                                                MaterialTheme.colorScheme.primaryContainer,
+                                            selectedLabelColor =
+                                                MaterialTheme.colorScheme.onPrimaryContainer,
+                                        ),
+                                    )
+                                }
+                            }
                         }
                     }
                 }
@@ -1072,7 +1235,7 @@ private fun GenrePickerDialog(
         },
         confirmButton = {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                if (openGroup != null) {
+                if (openGroup != null && query.isBlank()) {
                     TextButton(onClick = { openGroup = null }) {
                         Text("Back")
                     }
