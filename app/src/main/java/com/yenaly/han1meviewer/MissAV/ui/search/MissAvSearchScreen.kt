@@ -50,8 +50,10 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.InputChip
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.Composable
@@ -685,6 +687,7 @@ private fun RecentSuggestionsList(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun MissAvSearchHistorySheet(
     history: List<MissAvSearchHistoryEntry>,
@@ -693,7 +696,7 @@ private fun MissAvSearchHistorySheet(
     onDelete: (MissAvSearchHistoryEntry) -> Unit,
     onClearAll: () -> Unit,
 ) {
-    androidx.compose.material3.ModalBottomSheet(
+    ModalBottomSheet(
         onDismissRequest = onDismiss,
         containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
     ) {
@@ -712,7 +715,7 @@ private fun MissAvSearchHistorySheet(
                     modifier = Modifier.weight(1f),
                 )
                 if (history.isNotEmpty()) {
-                    androidx.compose.material3.TextButton(onClick = onClearAll) {
+                    TextButton(onClick = onClearAll) {
                         Text("Clear all")
                     }
                 }
