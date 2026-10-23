@@ -21,9 +21,7 @@ import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Campaign
 import androidx.compose.material.icons.filled.History
-import androidx.compose.material.icons.filled.Label
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
@@ -130,14 +128,8 @@ fun OnAirHomeScreen(
             TopAppBar(
                 title = { Text("OnAir", color = MaterialTheme.colorScheme.onSurface) },
                 actions = {
-                    IconButton(onClick = onOpenAnnouncement) {
-                        Icon(Icons.Default.Campaign, contentDescription = "Announcements")
-                    }
                     IconButton(onClick = onOpenPictures) {
                         Icon(Icons.Default.PhotoLibrary, contentDescription = "Pictures")
-                    }
-                    IconButton(onClick = onOpenTags) {
-                        Icon(Icons.Default.Label, contentDescription = "Tags")
                     }
                     IconButton(onClick = onOpenHistory) {
                         Icon(Icons.Default.History, contentDescription = "History")

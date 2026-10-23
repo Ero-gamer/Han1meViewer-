@@ -7,7 +7,6 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
@@ -33,6 +32,7 @@ import androidx.compose.material.icons.filled.FullscreenExit
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -85,6 +85,7 @@ fun OnAirVideoPlayer(
     onQualityChange: (String) -> Unit,
     onSpeedChange: (Float) -> Unit,
     onToggleFullscreen: () -> Unit,
+    onRetryQuality: (String) -> Unit = { onQualityChange(it) },
     onPlayerReady: (ExoPlayer) -> Unit = {},
     onTokenExpired: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
@@ -107,6 +108,9 @@ fun OnAirVideoPlayer(
                     rebuffering ||
                     playbackState == Player.STATE_BUFFERING
             )
+    val activeStream = state.activeStream
+    val streamError = activeStream?.state == StreamState.Error
+    val noStream = url.isNullOrBlank() && !state.isSwitchLoading
 
     DisposableEffect(Unit) {
         onDispose {
@@ -177,6 +181,8 @@ fun OnAirVideoPlayer(
             if (pos > 0) existing.seekTo(pos)
             existing.playWhenReady = wasPlaying
             currentUrl = url
+            hasRenderedFirstFrame = false
+            rebuffering = false
         }
     }
 
@@ -251,7 +257,7 @@ fun OnAirVideoPlayer(
                 },
                 onRelease = { view ->
                     exoPlayer?.setVideoSurfaceView(null)
-                    view.removeAllViews()
+                    view.removeAllChildren()
                 },
             )
 
@@ -295,7 +301,7 @@ fun OnAirVideoPlayer(
                 }
             }
 
-            if (state.playbackIntent == PlaybackIntent.NotStarted && !state.isSwitchLoading) {
+            if (state.playbackIntent == PlaybackIntent.NotStarted && !state.isSwitchLoading && !streamError) {
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
@@ -330,6 +336,7 @@ fun OnAirVideoPlayer(
 
             AnimatedVisibility(
                 visible = showControls && !isBuffering && !state.isSwitchLoading &&
+                        !streamError &&
                         state.playbackIntent != PlaybackIntent.NotStarted,
                 enter = fadeIn(),
                 exit = fadeOut(),
@@ -500,30 +507,72 @@ fun OnAirVideoPlayer(
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(12.dp),
+                modifier = Modifier.padding(24.dp),
             ) {
-                if (state.hasError) {
-                    Text(
-                        text = state.errorMessage ?: "Failed to load video",
-                        color = Color.White,
-                        style = MaterialTheme.typography.bodyMedium,
-                    )
-                } else {
-                    if (!coverUrl.isNullOrBlank()) {
-                        AsyncImage(
-                            model = coverUrl,
+                when {
+                    streamError || state.hasError -> {
+                        Icon(
+                            imageVector = Icons.Filled.Warning,
                             contentDescription = null,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .aspectRatio(16f / 9f),
-                            contentScale = ContentScale.Crop,
+                            tint = Color.White,
+                            modifier = Modifier.size(36.dp),
+                        )
+                        Text(
+                            text = activeStream?.errorMessage
+                                ?: state.errorMessage
+                                ?: "Failed to load video",
+                            color = Color.White,
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                        Button(onClick = { onRetryQuality(state.currentQuality) }) {
+                            Text("Retry")
+                        }
+                    }
+
+                    state.isSwitchLoading -> {
+                        CircularProgressIndicator(color = Color.White)
+                        Text(
+                            text = "Loading ${state.pendingQuality ?: ""} stream…",
+                            color = Color.White,
+                            style = MaterialTheme.typography.bodySmall,
                         )
                     }
-                    CircularProgressIndicator(color = Color.White)
-                    Text(
-                        text = "Loading video…",
-                        color = Color.White,
-                        style = MaterialTheme.typography.bodySmall,
-                    )
+
+                    noStream -> {
+                        Icon(
+                            imageVector = Icons.Filled.Warning,
+                            contentDescription = null,
+                            tint = Color.White,
+                            modifier = Modifier.size(36.dp),
+                        )
+                        Text(
+                            text = "No stream for ${state.currentQuality}",
+                            color = Color.White,
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                        Button(onClick = { onRetryQuality(state.currentQuality) }) {
+                            Text("Retry")
+                        }
+                    }
+
+                    else -> {
+                        if (!coverUrl.isNullOrBlank()) {
+                            AsyncImage(
+                                model = coverUrl,
+                                contentDescription = null,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .aspectRatio(16f / 9f),
+                                contentScale = ContentScale.Crop,
+                            )
+                        }
+                        CircularProgressIndicator(color = Color.White)
+                        Text(
+                            text = "Loading video…",
+                            color = Color.White,
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
                 }
             }
         }

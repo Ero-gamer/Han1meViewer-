@@ -156,27 +156,51 @@ object OnAirListingParser {
         val pagination = doc.selectFirst("nav.pagination")
             ?: doc.selectFirst("nav[aria-label=Pagination]")
             ?: return null
-        val pageStatus = pagination.selectFirst("span.page-status")?.text()?.trim().orEmpty()
-        val regex = Regex("""Page\s+(\d+)\s+of\s+(\d+)""", RegexOption.IGNORE_CASE)
-        val match = regex.find(pageStatus) ?: return null
-        val current = match.groupValues[1].toIntOrNull() ?: 1
-        val total = match.groupValues[2].toIntOrNull() ?: 1
-        val nextUrl = pagination.selectFirst("a.page-link[href]")
-            ?.let { anchor ->
-                val text = anchor.text().lowercase()
-                if (text.contains("next")) anchor.absUrl("href") else null
-            }
-            ?.takeIf { it.isNotBlank() }
-        val prevUrl = pagination.select("a.page-link[href]")
-            ?.firstOrNull { it.text().lowercase().contains("prev") }
-            ?.absUrl("href")
-            ?.takeIf { it.isNotBlank() }
+
         val jumpForm = pagination.selectFirst("form.page-jump")
+        val jumpInput = jumpForm?.selectFirst("input[name=page]")
+        val hiddenField = jumpForm?.selectFirst("input[name=field]")?.attr("value").orEmpty()
+        val hiddenSort = jumpForm?.selectFirst("input[name=sort]")?.attr("value").orEmpty()
+
+        val statusText = pagination.text().orEmpty()
+        val statusRegex = Regex("""Page\s+(\d+)\s+of\s+(\d+)""", RegexOption.IGNORE_CASE)
+
+        val currentFromInput = jumpInput?.attr("value")?.toIntOrNull()
+        val totalFromMax = jumpInput?.attr("max")?.toIntOrNull()
+        val statusMatch = statusRegex.find(statusText)
+        val currentFromStatus = statusMatch?.groupValues?.getOrNull(1)?.toIntOrNull()
+        val totalFromStatus = statusMatch?.groupValues?.getOrNull(2)?.toIntOrNull()
+
+        val current = currentFromInput ?: currentFromStatus ?: 1
+        val total = totalFromMax ?: totalFromStatus ?: 1
+
+        val anchors = pagination.select("a.page-link[href]")
+        val nextAnchor = anchors.firstOrNull {
+            it.text().contains("next", ignoreCase = true) ||
+                    it.text().contains("→", ignoreCase = true)
+        }
+        val prevAnchor = anchors.firstOrNull {
+            it.text().contains("prev", ignoreCase = true) ||
+                    it.text().contains("←", ignoreCase = true)
+        }
+
+        val nextUrl = nextAnchor?.absUrl("href")?.takeIf { it.isNotBlank() }
+        val prevUrl = prevAnchor?.absUrl("href")?.takeIf { it.isNotBlank() }
+
         val jumpAction = jumpForm?.absUrl("action")?.takeIf { it.isNotBlank() }
         val lastUrl = if (jumpAction != null && total > 0) {
-            val base = if (jumpAction.endsWith("/")) jumpAction else "$jumpAction/"
-            "${base.removeSuffix("/")}?page=$total"
+            val builder = okhttp3.HttpUrl.parse(jumpAction)?.newBuilder()
+            if (builder != null) {
+                if (hiddenField.isNotBlank()) builder.setQueryParameter("field", hiddenField)
+                if (hiddenSort.isNotBlank()) builder.setQueryParameter("sort", hiddenSort)
+                builder.setQueryParameter("page", total.toString())
+                builder.build().toString()
+            } else {
+                val base = jumpAction.trimEnd('/')
+                "$base?page=$total"
+            }
         } else null
+
         return OnAirPageInfo(
             current = current,
             total = total,

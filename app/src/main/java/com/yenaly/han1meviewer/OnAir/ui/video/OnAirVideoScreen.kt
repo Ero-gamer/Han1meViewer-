@@ -125,6 +125,7 @@ fun OnAirVideoScreen(
                 onQualityChange = viewModel::selectQuality,
                 onSpeedChange = viewModel::setSpeed,
                 onToggleFullscreen = { viewModel.setFullscreen(false) },
+                onRetryQuality = { viewModel.selectQuality(it) },
                 coverUrl = cover,
                 modifier = Modifier.fillMaxSize(),
             )
@@ -187,6 +188,7 @@ fun OnAirVideoScreen(
                             onQualityChange = viewModel::selectQuality,
                             onSpeedChange = viewModel::setSpeed,
                             onToggleFullscreen = { viewModel.setFullscreen(true) },
+                            onRetryQuality = { viewModel.selectQuality(it) },
                             coverUrl = detail.recommendedVideos.firstOrNull()?.thumbUrl,
                         )
 

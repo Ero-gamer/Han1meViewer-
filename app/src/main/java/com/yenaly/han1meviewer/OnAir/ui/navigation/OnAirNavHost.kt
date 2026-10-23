@@ -25,6 +25,7 @@ import com.yenaly.han1meviewer.OnAir.data.remote.TorFailure
 import com.yenaly.han1meviewer.OnAir.ui.announcement.OnAirAnnouncementsScreen
 import com.yenaly.han1meviewer.OnAir.ui.auth.OnAirLoginScreen
 import com.yenaly.han1meviewer.OnAir.ui.auth.OnAirRegisterScreen
+import com.yenaly.han1meviewer.OnAir.ui.gate.OnAirGateScreen
 import com.yenaly.han1meviewer.OnAir.ui.gate.OnAirGateState
 import com.yenaly.han1meviewer.OnAir.ui.history.OnAirHistoryScreen
 import com.yenaly.han1meviewer.OnAir.ui.home.OnAirHomeScreen
@@ -62,11 +63,11 @@ fun OnAirNavHost(
     var torModalReason by rememberSaveable { mutableStateOf("") }
 
     LaunchedEffect(retryTick) {
-        delay(30)
         OnAirNetwork.init(activity.applicationContext)
         NavigationManager.initialize(navController, SiteType.ONAIR)
 
         gateState = OnAirGateState.CheckingTor
+        delay(16)
 
         val tor = OnAirTorChecker.check()
         if (!tor.isTorExit) {
@@ -96,6 +97,7 @@ fun OnAirNavHost(
         }
 
         gateState = OnAirGateState.Probing
+        delay(16)
         val probe = OnAirAuthProbe.probe(activity)
         gateState = if (probe.ok) {
             OnAirGateState.Passed
@@ -112,7 +114,7 @@ fun OnAirNavHost(
 
     if (showTorModal) {
         AlertDialog(
-            onDismissRequest = {  },
+            onDismissRequest = { },
             title = { Text("Tor not connected") },
             text = {
                 Text(
@@ -253,6 +255,8 @@ fun OnAirNavHost(
                         onBack = { navController.popBackStack() },
                         onOpenCookies = { navController.navigateSafely(OnAirCookieRoute) },
                         onOpenLogin = { navController.navigateSafely(OnAirLoginRoute) },
+                        onOpenAnnouncements = { navController.navigateSafely(OnAirAnnouncementsRoute) },
+                        onOpenTags = { navController.navigateSafely(OnAirTagsIndexRoute) },
                         onLoggedOut = {
                             OnAirProfileCache.invalidate()
                             gateState = OnAirGateState.ContentError(
@@ -324,94 +328,27 @@ fun OnAirNavHost(
 
         OnAirGateState.Initializing,
         OnAirGateState.CheckingTor,
-        OnAirGateState.Probing -> {
-            NavHost(
-                navController = navController,
-                startDestination = OnAirCookieRoute,
-            ) {
-                composable<OnAirCookieRoute> {
-                    OnAirCookieSettingsScreen(
-                        onBack = { activity.onBackPressedDispatcher.onBackPressed() },
-                        onOpenLogin = {
-                            navController.navigate(OnAirLoginRoute) { launchSingleTop = true }
-                        },
-                        onOpenRegister = {
-                            navController.navigate(OnAirRegisterRoute) { launchSingleTop = true }
-                        },
-                        onSwitchSite = { activity.requestSiteSwitch() },
-                        onCookiesSaved = { retryTick = System.currentTimeMillis() },
-                        gateState = state,
-                    )
-                }
-                composable<OnAirLoginRoute> {
-                    OnAirLoginScreen(
-                        onBack = { navController.popBackStack() },
-                        onOpenRegister = {
-                            navController.navigate(OnAirRegisterRoute) { launchSingleTop = true }
-                        },
-                        onSuccess = { retryTick = System.currentTimeMillis() },
-                    )
-                }
-                composable<OnAirRegisterRoute> {
-                    OnAirRegisterScreen(
-                        onBack = { navController.popBackStack() },
-                        onOpenLogin = {
-                            navController.navigate(OnAirLoginRoute) { launchSingleTop = true }
-                        },
-                        onSuccess = { retryTick = System.currentTimeMillis() },
-                    )
-                }
-            }
-        }
-
-        is OnAirGateState.TorBlocked -> {
-            NavHost(
-                navController = navController,
-                startDestination = OnAirCookieRoute,
-            ) {
-                composable<OnAirCookieRoute> {
-                    OnAirCookieSettingsScreen(
-                        onBack = { activity.onBackPressedDispatcher.onBackPressed() },
-                        onOpenLogin = {
-                            navController.navigate(OnAirLoginRoute) { launchSingleTop = true }
-                        },
-                        onOpenRegister = {
-                            navController.navigate(OnAirRegisterRoute) { launchSingleTop = true }
-                        },
-                        onSwitchSite = { activity.requestSiteSwitch() },
-                        onCookiesSaved = { retryTick = System.currentTimeMillis() },
-                        gateState = state,
-                    )
-                }
-                composable<OnAirLoginRoute> {
-                    OnAirLoginScreen(
-                        onBack = { navController.popBackStack() },
-                        onOpenRegister = {
-                            navController.navigate(OnAirRegisterRoute) { launchSingleTop = true }
-                        },
-                        onSuccess = { retryTick = System.currentTimeMillis() },
-                    )
-                }
-                composable<OnAirRegisterRoute> {
-                    OnAirRegisterScreen(
-                        onBack = { navController.popBackStack() },
-                        onOpenLogin = {
-                            navController.navigate(OnAirLoginRoute) { launchSingleTop = true }
-                        },
-                        onSuccess = { retryTick = System.currentTimeMillis() },
-                    )
-                }
-            }
-        }
-
+        OnAirGateState.Probing,
+        is OnAirGateState.TorBlocked,
         is OnAirGateState.ContentError -> {
+            val activeState = state
             NavHost(
                 navController = navController,
-                startDestination = OnAirCookieRoute,
+                startDestination = OnAirGateRoute,
             ) {
+                composable<OnAirGateRoute> {
+                    OnAirGateScreen(
+                        state = activeState,
+                        onSwitchSite = { activity.requestSiteSwitch() },
+                        onOpenCookies = {
+                            navController.navigate(OnAirCookieRoute) { launchSingleTop = true }
+                        },
+                        onRetry = { retryTick = System.currentTimeMillis() },
+                    )
+                }
                 composable<OnAirCookieRoute> {
                     OnAirCookieSettingsScreen(
-                        onBack = { activity.onBackPressedDispatcher.onBackPressed() },
+                        onBack = { navController.popBackStack() },
                         onOpenLogin = {
                             navController.navigate(OnAirLoginRoute) { launchSingleTop = true }
                         },
@@ -420,7 +357,7 @@ fun OnAirNavHost(
                         },
                         onSwitchSite = { activity.requestSiteSwitch() },
                         onCookiesSaved = { retryTick = System.currentTimeMillis() },
-                        gateState = state,
+                        gateState = activeState,
                     )
                 }
                 composable<OnAirLoginRoute> {

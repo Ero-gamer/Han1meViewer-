@@ -85,6 +85,9 @@ class OnAirHomeViewModel(application: Application) : AndroidViewModel(applicatio
                         val page = state.info
                         _cards.value = page.videos
                         _pageInfo.value = page.pageInfo
+                        if (page.pageInfo == null) {
+                            hasMore = page.videos.isNotEmpty()
+                        }
 
                         page.currentUsername?.let { name ->
                             OnAirProfileCache.setCurrentUsername(name)
@@ -126,8 +129,10 @@ class OnAirHomeViewModel(application: Application) : AndroidViewModel(applicatio
 
     fun loadNextPage() {
         if (_isLoadingMore.value || !hasMore) return
-        val info = _pageInfo.value ?: return
-        if (currentPage >= info.total) return
+        if (currentPage >= (_pageInfo.value?.total ?: Int.MAX_VALUE)) {
+            hasMore = false
+            return
+        }
         val nextPage = currentPage + 1
 
         viewModelScope.launch {
@@ -148,7 +153,7 @@ class OnAirHomeViewModel(application: Application) : AndroidViewModel(applicatio
                         _cards.update { prev ->
                             (prev + newCards).distinctBy { it.videoId }
                         }
-                        _pageInfo.value = pair.second ?: info
+                        pair.second?.let { _pageInfo.value = it }
                         currentPage = nextPage
                         _loadedPage.value = nextPage
                         _isLoadingMore.value = false

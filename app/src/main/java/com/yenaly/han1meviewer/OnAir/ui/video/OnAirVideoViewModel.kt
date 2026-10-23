@@ -15,6 +15,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 
 enum class PlaybackIntent {
     NotStarted,
@@ -72,6 +73,8 @@ class OnAirVideoViewModel(application: Application) : AndroidViewModel(applicati
         private const val TAG = "OnAirVideoViewModel"
         private const val RESUME_THRESHOLD_MS = 5_000L
         private const val COMPLETE_GRACE_MS = 3_000L
+        private const val QUALITY_FETCH_TIMEOUT_MS = 45_000L
+        private val QUALITY_PRIORITY = listOf("original", "480", "360", "240", "144")
     }
 
     private val _pageState =
@@ -91,6 +94,7 @@ class OnAirVideoViewModel(application: Application) : AndroidViewModel(applicati
     private var extractJob: Job? = null
     private var currentVideoId: String = ""
     private var currentDetail: OnAirVideoDetail? = null
+    private val qualityCache = mutableMapOf<String, QualityStream>()
 
     init {
         OnAirHistoryRepo.init(application)
@@ -102,6 +106,7 @@ class OnAirVideoViewModel(application: Application) : AndroidViewModel(applicati
 
         extractJob?.cancel()
         extractJob = null
+        qualityCache.clear()
 
         currentVideoId = videoId
         loadJob?.cancel()
@@ -117,8 +122,13 @@ class OnAirVideoViewModel(application: Application) : AndroidViewModel(applicati
                     is VideoLoadingState.Success -> {
                         val detail = state.info
                         currentDetail = detail
-                        applyInitialDetail(detail, preferredQuality)
+                        val history = OnAirHistoryRepo.getByVideoId(videoId)
+                        val preferred = preferredQuality ?: history?.lastQuality
+                        applyInitialDetail(detail, preferred)
                         loadResumePosition(videoId)
+                        if (_playerState.value.activeStream?.state != StreamState.Ready) {
+                            autoFetchFallbackQuality()
+                        }
                     }
 
                     is VideoLoadingState.Error -> {
@@ -148,18 +158,19 @@ class OnAirVideoViewModel(application: Application) : AndroidViewModel(applicati
     }
 
     private fun applyInitialDetail(detail: OnAirVideoDetail, preferred: String?) {
-        val qualityInPage = detail.currentQuality
-        val resolvedUrl = detail.streamUrlByQuality[qualityInPage]
-
+        val streamMap = detail.streamUrlByQuality
         val initialMap = linkedMapOf<String, QualityStream>()
-        if (resolvedUrl != null) {
-            initialMap[qualityInPage] = QualityStream(
-                quality = qualityInPage,
-                url = resolvedUrl,
-                mediaType = detail.currentMediaType,
-                isHls = resolvedUrl.contains(".m3u8", ignoreCase = true),
-                state = StreamState.Ready,
-            )
+
+        streamMap.forEach { (quality, url) ->
+            if (url.isNotBlank()) {
+                initialMap[quality] = QualityStream(
+                    quality = quality,
+                    url = url,
+                    mediaType = detail.currentMediaType,
+                    isHls = url.contains(".m3u8", ignoreCase = true),
+                    state = StreamState.Ready,
+                )
+            }
         }
         detail.qualityLinksByQuality.keys.forEach { q ->
             if (q !in initialMap) {
@@ -167,18 +178,22 @@ class OnAirVideoViewModel(application: Application) : AndroidViewModel(applicati
             }
         }
         if (initialMap.isEmpty()) {
-            initialMap[qualityInPage] = QualityStream(
-                quality = qualityInPage,
+            initialMap[detail.currentQuality] = QualityStream(
+                quality = detail.currentQuality,
                 state = StreamState.Error,
-                errorMessage = "No stream URL for $qualityInPage",
+                errorMessage = "No stream URL available",
             )
         }
 
         val chosen = when {
-            preferred != null && initialMap.containsKey(preferred) -> preferred
-            resolvedUrl != null -> qualityInPage
-            else -> initialMap.keys.first()
+            preferred != null && initialMap[preferred]?.state == StreamState.Ready -> preferred
+            initialMap[detail.currentQuality]?.state == StreamState.Ready -> detail.currentQuality
+            else -> initialMap.entries.firstOrNull { it.value.state == StreamState.Ready }?.key
+                ?: QUALITY_PRIORITY.firstOrNull { initialMap[it] != null }
+                ?: initialMap.keys.first()
         }
+
+        initialMap[chosen]?.let { qualityCache[chosen] = it }
 
         _playerState.update {
             it.copy(
@@ -187,11 +202,20 @@ class OnAirVideoViewModel(application: Application) : AndroidViewModel(applicati
                 isLoading = false,
                 hasError = false,
                 errorMessage = null,
-                isReady = resolvedUrl != null,
+                isReady = initialMap[chosen]?.state == StreamState.Ready,
                 playbackIntent = PlaybackIntent.NotStarted,
                 pendingQuality = null,
             )
         }
+    }
+
+    private fun autoFetchFallbackQuality() {
+        val s = _playerState.value
+        val candidates = QUALITY_PRIORITY.filter { q ->
+            s.streamsByQuality[q] != null && s.streamsByQuality[q]?.state != StreamState.Ready
+        }
+        val target = candidates.firstOrNull() ?: return
+        fetchQualityStream(target)
     }
 
     private suspend fun loadResumePosition(videoId: String) {
@@ -223,7 +247,13 @@ class OnAirVideoViewModel(application: Application) : AndroidViewModel(applicati
     fun startPlayback() {
         val s = _playerState.value
         if (s.isSwitchLoading) return
-        if (s.activeUrl.isNullOrBlank()) return
+        if (s.activeUrl.isNullOrBlank()) {
+            val current = s.streamsByQuality[s.currentQuality]
+            if (current == null || current.state == StreamState.Error) {
+                selectQuality(s.currentQuality)
+            }
+            return
+        }
         _playerState.update {
             it.copy(
                 playbackIntent = PlaybackIntent.Playing,
@@ -256,25 +286,25 @@ class OnAirVideoViewModel(application: Application) : AndroidViewModel(applicati
 
     fun selectQuality(quality: String) {
         val s = _playerState.value
+        if (quality.isBlank()) return
         if (quality == s.currentQuality && s.activeStream?.state == StreamState.Ready) return
         if (s.pendingQuality == quality) return
 
-        val detail = currentDetail ?: return
-        val existing = s.streamsByQuality[quality]
-
-        if (existing != null && existing.state == StreamState.Ready) {
+        val cached = qualityCache[quality]
+        if (cached != null && cached.state == StreamState.Ready && cached.url.isNotBlank()) {
             val wasPlaying = s.playbackIntent == PlaybackIntent.Playing
             _playerState.update {
                 it.copy(
                     currentQuality = quality,
                     isReady = true,
                     isPlaying = wasPlaying,
-                    position = it.position,
+                    streamsByQuality = it.streamsByQuality + (quality to cached),
                 )
             }
             return
         }
 
+        val detail = currentDetail ?: return
         extractJob?.cancel()
         extractJob = viewModelScope.launch {
             _playerState.update {
@@ -285,12 +315,14 @@ class OnAirVideoViewModel(application: Application) : AndroidViewModel(applicati
                                 quality = quality,
                                 state = StreamState.Loading,
                             )
-                            )
+                            ),
                 )
             }
 
             val result: StreamResult? = try {
-                OnAirNetworkRepo.fetchStreamUrlForQuality(detail.videoId, quality)
+                withTimeoutOrNull(QUALITY_FETCH_TIMEOUT_MS) {
+                    OnAirNetworkRepo.fetchStreamUrlForQuality(detail.videoId, quality)
+                }
             } catch (e: CancellationException) {
                 _playerState.update { it.copy(pendingQuality = null) }
                 throw e
@@ -315,6 +347,14 @@ class OnAirVideoViewModel(application: Application) : AndroidViewModel(applicati
                 return@launch
             }
 
+            val ready = QualityStream(
+                quality = quality,
+                url = result.url,
+                mediaType = result.mediaType,
+                isHls = result.isHls,
+                state = StreamState.Ready,
+            )
+            qualityCache[quality] = ready
             val wasPlaying = _playerState.value.playbackIntent == PlaybackIntent.Playing
             _playerState.update {
                 it.copy(
@@ -322,17 +362,73 @@ class OnAirVideoViewModel(application: Application) : AndroidViewModel(applicati
                     currentQuality = quality,
                     isReady = true,
                     isPlaying = wasPlaying,
+                    hasError = false,
+                    errorMessage = null,
+                    streamsByQuality = it.streamsByQuality + (quality to ready),
+                )
+            }
+        }
+    }
+
+    private suspend fun fetchQualityStream(quality: String) {
+        val detail = currentDetail ?: return
+        _playerState.update {
+            it.copy(
+                pendingQuality = quality,
+                streamsByQuality = it.streamsByQuality + (
+                        quality to QualityStream(
+                            quality = quality,
+                            state = StreamState.Loading,
+                        )
+                        ),
+            )
+        }
+        val result: StreamResult? = try {
+            withTimeoutOrNull(QUALITY_FETCH_TIMEOUT_MS) {
+                OnAirNetworkRepo.fetchStreamUrlForQuality(detail.videoId, quality)
+            }
+        } catch (e: CancellationException) {
+            _playerState.update { it.copy(pendingQuality = null) }
+            throw e
+        } catch (e: Exception) {
+            Log.e(TAG, "fetchQualityStream failed", e)
+            null
+        }
+        if (result == null) {
+            _playerState.update {
+                it.copy(
+                    pendingQuality = null,
+                    hasError = it.currentQuality == quality,
+                    errorMessage = if (it.currentQuality == quality)
+                        "Quality $quality unavailable" else it.errorMessage,
                     streamsByQuality = it.streamsByQuality + (
                             quality to QualityStream(
                                 quality = quality,
-                                url = result.url,
-                                mediaType = result.mediaType,
-                                isHls = result.isHls,
-                                state = StreamState.Ready,
+                                state = StreamState.Error,
+                                errorMessage = "Quality $quality unavailable",
                             )
                             ),
                 )
             }
+            return
+        }
+        val ready = QualityStream(
+            quality = quality,
+            url = result.url,
+            mediaType = result.mediaType,
+            isHls = result.isHls,
+            state = StreamState.Ready,
+        )
+        qualityCache[quality] = ready
+        _playerState.update {
+            it.copy(
+                pendingQuality = null,
+                currentQuality = quality,
+                isReady = true,
+                hasError = false,
+                errorMessage = null,
+                streamsByQuality = it.streamsByQuality + (quality to ready),
+            )
         }
     }
 

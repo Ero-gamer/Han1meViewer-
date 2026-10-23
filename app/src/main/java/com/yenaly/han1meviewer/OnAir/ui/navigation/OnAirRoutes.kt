@@ -3,6 +3,9 @@ package com.yenaly.han1meviewer.OnAir.ui.navigation
 import kotlinx.serialization.Serializable
 
 @Serializable
+object OnAirGateRoute
+
+@Serializable
 object OnAirHomeRoute
 
 @Serializable
