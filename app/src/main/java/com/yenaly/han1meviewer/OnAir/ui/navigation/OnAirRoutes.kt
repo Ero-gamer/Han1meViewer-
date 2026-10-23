@@ -47,6 +47,9 @@ object OnAirHistoryRoute
 object OnAirAnnouncementsRoute
 
 @Serializable
+object OnAirChatRoute
+
+@Serializable
 object OnAirSettingsRoute
 
 @Serializable

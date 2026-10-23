@@ -1,7 +1,7 @@
 package com.yenaly.han1meviewer.OnAir.data.remote
 
 import android.content.Context
-import com.yenaly.han1meviewer.OnAir.common.OnAirConstants
+import com.yenaly.han1meviewer.OnAir.common.OnAirSitePreferences
 import com.yenaly.han1meviewer.logic.network.HDns
 import com.yenaly.han1meviewer.logic.network.HProxySelector
 import com.yenaly.han1meviewer.logic.network.interceptor.UrlLoggingInterceptor
@@ -44,7 +44,7 @@ object OnAirNetwork {
         }
 
     val baseUrl: String
-        get() = OnAirConstants.getPrimaryUrl()
+        get() = OnAirSitePreferences.selectedBaseUrl
 
     val service: OnAirService
         get() {
@@ -75,9 +75,10 @@ object OnAirNetwork {
 
     private fun createOkHttpClient(base: String): OkHttpClient {
         return OkHttpClient.Builder()
-            .connectTimeout(45, TimeUnit.SECONDS)
+            .connectTimeout(30, TimeUnit.SECONDS)
             .readTimeout(45, TimeUnit.SECONDS)
             .writeTimeout(45, TimeUnit.SECONDS)
+            .retryOnConnectionFailure(true)
             .addInterceptor(UserAgentInterceptor)
             .addInterceptor(UrlLoggingInterceptor())
             .addInterceptor { chain ->

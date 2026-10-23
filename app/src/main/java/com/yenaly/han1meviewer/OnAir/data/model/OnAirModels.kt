@@ -54,6 +54,23 @@ data class OnAirAnnouncementEntry(
     val isPinned: Boolean,
 )
 
+data class OnAirChatMessage(
+    val id: String,
+    val author: String?,
+    val authorUrl: String?,
+    val timestampLabel: String?,
+    val timestampRaw: String?,
+    val body: String,
+)
+
+data class OnAirChatPage(
+    val messages: List<OnAirChatMessage>,
+    val csrfToken: String,
+    val latestId: String?,
+    val onLastPage: Boolean,
+    val formError: String?,
+)
+
 data class OnAirTag(
     val name: String,
     val url: String,

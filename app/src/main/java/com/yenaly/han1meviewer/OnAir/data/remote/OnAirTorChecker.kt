@@ -1,6 +1,8 @@
 package com.yenaly.han1meviewer.OnAir.data.remote
 
 import android.util.Log
+import com.yenaly.han1meviewer.logic.network.HDns
+import com.yenaly.han1meviewer.logic.network.HProxySelector
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
@@ -30,8 +32,11 @@ object OnAirTorChecker {
     private const val CHECK_URL = "https://check.torproject.org/api/ip"
 
     private val client = OkHttpClient.Builder()
-        .connectTimeout(10, TimeUnit.SECONDS)
-        .readTimeout(15, TimeUnit.SECONDS)
+        .connectTimeout(15, TimeUnit.SECONDS)
+        .readTimeout(20, TimeUnit.SECONDS)
+        .retryOnConnectionFailure(true)
+        .dns(HDns())
+        .proxySelector(HProxySelector())
         .build()
 
     suspend fun check(): OnAirTorStatus = withContext(Dispatchers.IO) {

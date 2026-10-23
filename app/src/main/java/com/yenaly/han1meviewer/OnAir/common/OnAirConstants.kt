@@ -40,6 +40,7 @@ object OnAirConstants {
     const val SORT_LONGEST = "longest"
     const val SORT_SHORTEST = "shortest"
 
-    fun getPrimaryUrl(): String = ONAIR_URL[0]
-    fun getPrimaryHost(): String = ONAIR_HOSTNAME[0]
+    fun getPrimaryUrl(): String = OnAirSitePreferences.selectedBaseUrl
+
+    fun getPrimaryHost(): String = OnAirSitePreferences.currentHostname()
 }

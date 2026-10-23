@@ -30,8 +30,16 @@ object OnAirProfileCache {
     }
 
     fun setCurrentUsername(username: String?) {
-        val trimmed = username?.trim()?.takeIf { it.isNotBlank() } ?: return
+        val trimmed = username?.trim()?.takeIf { it.isNotBlank() }
+        if (trimmed == null) {
+            currentUsername = null
+            return
+        }
         currentUsername = trimmed
+    }
+
+    fun clearCurrentUsername() {
+        currentUsername = null
     }
 
     fun getCurrentUsername(): String? = currentUsername
@@ -41,5 +49,10 @@ object OnAirProfileCache {
     fun invalidate(username: String? = null) {
         if (username == null) cache.clear()
         else cache.remove(username.lowercase())
+    }
+
+    fun clearAll() {
+        cache.clear()
+        currentUsername = null
     }
 }

@@ -25,6 +25,7 @@ import com.yenaly.han1meviewer.OnAir.data.remote.TorFailure
 import com.yenaly.han1meviewer.OnAir.ui.announcement.OnAirAnnouncementsScreen
 import com.yenaly.han1meviewer.OnAir.ui.auth.OnAirLoginScreen
 import com.yenaly.han1meviewer.OnAir.ui.auth.OnAirRegisterScreen
+import com.yenaly.han1meviewer.OnAir.ui.chat.OnAirChatScreen
 import com.yenaly.han1meviewer.OnAir.ui.gate.OnAirGateScreen
 import com.yenaly.han1meviewer.OnAir.ui.gate.OnAirGateState
 import com.yenaly.han1meviewer.OnAir.ui.history.OnAirHistoryScreen
@@ -250,12 +251,20 @@ fun OnAirNavHost(
                     OnAirAnnouncementsScreen(onBack = { navController.popBackStack() })
                 }
 
+                composable<OnAirChatRoute> {
+                    OnAirChatScreen(
+                        onBack = { navController.popBackStack() },
+                        onOpenUser = { u -> navController.navigateSafely(OnAirUserRoute(u)) },
+                    )
+                }
+
                 composable<OnAirSettingsRoute> {
                     OnAirSettingsScreen(
                         onBack = { navController.popBackStack() },
                         onOpenCookies = { navController.navigateSafely(OnAirCookieRoute) },
                         onOpenLogin = { navController.navigateSafely(OnAirLoginRoute) },
                         onOpenAnnouncements = { navController.navigateSafely(OnAirAnnouncementsRoute) },
+                        onOpenChat = { navController.navigateSafely(OnAirChatRoute) },
                         onOpenTags = { navController.navigateSafely(OnAirTagsIndexRoute) },
                         onLoggedOut = {
                             OnAirProfileCache.invalidate()

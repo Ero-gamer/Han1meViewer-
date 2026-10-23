@@ -21,6 +21,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.filled.Campaign
+import androidx.compose.material.icons.filled.Chat
 import androidx.compose.material.icons.filled.Label
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.AlertDialog
@@ -75,6 +76,7 @@ fun OnAirSettingsScreen(
     onOpenCookies: () -> Unit,
     onOpenLogin: () -> Unit,
     onOpenAnnouncements: () -> Unit,
+    onOpenChat: () -> Unit,
     onOpenTags: () -> Unit,
     onLoggedOut: () -> Unit,
     onOpenProfile: (String) -> Unit = {},
@@ -123,7 +125,7 @@ fun OnAirSettingsScreen(
                 val t = token
                 if (t.isNullOrBlank()) {
                     OnAirCookieManager.clearCookies()
-                    OnAirProfileCache.invalidate()
+                    OnAirProfileCache.clearAll()
                     GlobalToasts.show("Session cleared locally", level = GlobalToasts.ToastLevel.INFO)
                     loggingOut = false
                     showLogoutDialog = false
@@ -133,7 +135,7 @@ fun OnAirSettingsScreen(
                 OnAirAuthRepo.logout(t).collect { result ->
                     loggingOut = false
                     showLogoutDialog = false
-                    OnAirProfileCache.invalidate()
+                    OnAirProfileCache.clearAll()
                     when (result) {
                         is OnAirAuthRepo.AuthResult.Success -> {
                             GlobalToasts.show("Logged out", level = GlobalToasts.ToastLevel.SUCCESS)
@@ -155,7 +157,7 @@ fun OnAirSettingsScreen(
                 loggingOut = false
                 showLogoutDialog = false
                 OnAirCookieManager.clearCookies()
-                OnAirProfileCache.invalidate()
+                OnAirProfileCache.clearAll()
                 GlobalToasts.show("Session cleared locally", level = GlobalToasts.ToastLevel.WARNING)
                 onLoggedOut()
             }
@@ -335,7 +337,7 @@ fun OnAirSettingsScreen(
                         )
                         Spacer(Modifier.height(4.dp))
                         Text(
-                            text = "Announcements and tags moved here from the home screen.",
+                            text = "Announcements, chat and tags moved here from the home screen.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -362,6 +364,33 @@ fun OnAirSettingsScreen(
                                 )
                                 Text(
                                     text = "Site news and mirror updates",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(8.dp))
+                                .clickable(onClick = onOpenChat)
+                                .padding(vertical = 10.dp, horizontal = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Chat,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                            )
+                            Spacer(Modifier.width(10.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "Chat",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = FontWeight.SemiBold,
+                                )
+                                Text(
+                                    text = "Site-wide community chat",
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )

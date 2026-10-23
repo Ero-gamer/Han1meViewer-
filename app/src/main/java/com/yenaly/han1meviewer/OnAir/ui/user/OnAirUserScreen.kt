@@ -56,6 +56,7 @@ import com.yenaly.han1meviewer.ui.component.lazy.LazyVerticalGrid
 import com.yenaly.han1meviewer.ui.screen.rememberVideoGridColumns
 import com.yenaly.han1meviewer.ui.theme.SpacingNormal
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -73,15 +74,17 @@ fun OnAirUserScreen(
     var currentPage by remember { mutableIntStateOf(1) }
     var totalPages by remember { mutableIntStateOf(1) }
     var pendingPage by remember { mutableIntStateOf(0) }
+    var reloadTick by remember { mutableIntStateOf(0) }
     val gridState = rememberLazyGridState()
     val columns = rememberVideoGridColumns()
 
-    LaunchedEffect(username) {
+    LaunchedEffect(username, reloadTick) {
         state = VideoLoadingState.Loading
         videos = emptyList()
         currentPage = 1
         totalPages = 1
         pendingPage = 0
+        isLoadingMore = false
 
         OnAirNetworkRepo.getUserProfile(username, 1).collect { s ->
             state = s
@@ -170,11 +173,11 @@ fun OnAirUserScreen(
                 is VideoLoadingState.Loading -> LoadingContent()
                 is VideoLoadingState.Error -> ErrorContent(
                     message = s.throwable.message ?: "Failed",
-                    onRetry = { state = VideoLoadingState.Loading },
+                    onRetry = { reloadTick++ },
                 )
                 is VideoLoadingState.NoContent -> ErrorContent(
                     message = "User not found",
-                    onRetry = {},
+                    onRetry = { reloadTick++ },
                 )
                 is VideoLoadingState.Success -> {
                     val profile = s.info

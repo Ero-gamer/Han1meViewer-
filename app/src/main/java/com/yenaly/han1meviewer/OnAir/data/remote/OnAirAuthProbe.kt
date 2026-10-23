@@ -64,17 +64,28 @@ object OnAirAuthProbe {
                         suggestWait = true,
                     )
 
-                    code == 401 || code == 403 -> {
+                    code == 401 -> {
                         OnAirCookieManager.clearCookies()
                         OnAirProbeResult(
                             ok = false,
                             failure = OnAirProbeFailure.SessionExpired,
-                            userMessage = "Your session was rejected (HTTP $code). " +
+                            userMessage = "Your session was rejected (HTTP 401). " +
                                     "The cookies are no longer valid — sign in again.",
                             httpCode = code,
                             suggestRelogin = true,
                         )
                     }
+
+                    code == 403 -> OnAirProbeResult(
+                        ok = false,
+                        failure = OnAirProbeFailure.SessionExpired,
+                        userMessage = "OnAir refused the request (HTTP 403). " +
+                                "This is often a mirror-side WAF or ad-pass block. " +
+                                "Try switching mirrors, or wait a moment and retry.",
+                        httpCode = code,
+                        suggestSwitchSite = true,
+                        suggestWait = true,
+                    )
 
                     code in 500..599 -> OnAirProbeResult(
                         ok = false,

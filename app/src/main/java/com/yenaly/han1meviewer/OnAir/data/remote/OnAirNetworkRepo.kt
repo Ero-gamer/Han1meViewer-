@@ -303,6 +303,7 @@ object OnAirNetworkRepo {
     fun getVideoDetail(videoId: String, quality: String? = null) = flow {
         emit(VideoLoadingState.Loading)
         try {
+            val watchUrl = OnAirNetwork.baseUrl.trimEnd('/') + "/watch/" + videoId
             val result = retryWithBackoff {
                 val response = OnAirNetwork.service.getWatchPage(
                     videoId = videoId,
@@ -312,7 +313,7 @@ object OnAirNetworkRepo {
                     return@retryWithBackoff VideoLoadingState.NoContent
                 }
                 val html = response.toHtmlOrThrow()
-                val detail = OnAirWatchParser.parseWatchPage(html, OnAirNetwork.baseUrl)
+                val detail = OnAirWatchParser.parseWatchPage(html, watchUrl)
                 if (detail == null) {
                     VideoLoadingState.Error(
                         IllegalStateException(
@@ -320,7 +321,12 @@ object OnAirNetworkRepo {
                         )
                     )
                 } else {
-                    VideoLoadingState.Success(detail)
+                    val normalized = if (detail.videoId.isBlank()) {
+                        detail.copy(videoId = videoId)
+                    } else {
+                        detail
+                    }
+                    VideoLoadingState.Success(normalized)
                 }
             }
             emit(result)
@@ -334,6 +340,10 @@ object OnAirNetworkRepo {
         videoId: String,
         quality: String,
     ): StreamResult? {
+        if (videoId.isBlank()) {
+            Log.w(TAG, "fetchStreamUrlForQuality called with blank videoId")
+            return null
+        }
         return try {
             retryWithBackoff {
                 val response = OnAirNetwork.service.getWatchPage(

@@ -93,7 +93,6 @@ object OnAirAuthRepo {
                 }
 
                 if (code in 200..399 && !looksLikeLoginPage && !extracted) {
-
                     emit(AuthResult.Success)
                     return@use
                 }
@@ -247,9 +246,9 @@ object OnAirAuthRepo {
         val doc = Jsoup.parse(html, baseUrl)
         val csrfToken = doc.selectFirst("input[name=csrf_token]")?.attr("value")
             ?: error("Missing csrf_token on /$kind")
-        val honeypot = doc.select("input[type=text][name^=hp_]")
-            .firstOrNull()
+        val honeypot = doc.selectFirst("input[name^=hp_]")
             ?.attr("name")
+            ?.takeIf { it.isNotBlank() }
             ?: error("Missing honeypot field on /$kind")
         val refCode = doc.selectFirst("input[name=ref_code]")?.attr("value").orEmpty()
         val extra = if (kind == "register") mapOf("ref_code" to refCode) else emptyMap()

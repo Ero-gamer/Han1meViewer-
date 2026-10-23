@@ -200,8 +200,12 @@ fun OnAirVideoPlayer(
         exoPlayer?.setPlaybackSpeed(state.speed)
     }
 
-    LaunchedEffect(exoPlayer, isExoReady) {
+    LaunchedEffect(exoPlayer, isExoReady, state.playbackIntent) {
         val player = exoPlayer ?: return@LaunchedEffect
+        if (state.playbackIntent != PlaybackIntent.Playing) {
+            onPositionUpdate(player.currentPosition, player.duration)
+            return@LaunchedEffect
+        }
         while (isActive) {
             delay(500)
             val pos = player.currentPosition
