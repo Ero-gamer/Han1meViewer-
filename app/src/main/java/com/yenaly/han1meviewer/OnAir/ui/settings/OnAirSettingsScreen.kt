@@ -119,47 +119,25 @@ fun OnAirSettingsScreen(
     fun performLogout() {
         loggingOut = true
         scope.launch {
-            runCatching {
-                var token: String? = null
-                OnAirAuthRepo.fetchLogoutToken().collect { token = it }
-                val t = token
-                if (t.isNullOrBlank()) {
-                    OnAirCookieManager.clearCookies()
-                    OnAirProfileCache.clearAll()
-                    GlobalToasts.show("Session cleared locally", level = GlobalToasts.ToastLevel.INFO)
-                    loggingOut = false
-                    showLogoutDialog = false
+            val result = OnAirAuthRepo.performLogout()
+            loggingOut = false
+            showLogoutDialog = false
+            OnAirProfileCache.clearAll()
+            profile = null
+            when (result) {
+                is OnAirAuthRepo.AuthResult.Success -> {
+                    GlobalToasts.show("Logged out", level = GlobalToasts.ToastLevel.SUCCESS)
                     onLoggedOut()
-                    return@launch
                 }
-                OnAirAuthRepo.logout(t).collect { result ->
-                    loggingOut = false
-                    showLogoutDialog = false
-                    OnAirProfileCache.clearAll()
-                    when (result) {
-                        is OnAirAuthRepo.AuthResult.Success -> {
-                            GlobalToasts.show("Logged out", level = GlobalToasts.ToastLevel.SUCCESS)
-                            onLoggedOut()
-                        }
-                        is OnAirAuthRepo.AuthResult.FormError -> {
-                            OnAirCookieManager.clearCookies()
-                            GlobalToasts.show(result.message, level = GlobalToasts.ToastLevel.WARNING)
-                            onLoggedOut()
-                        }
-                        is OnAirAuthRepo.AuthResult.NetworkError -> {
-                            OnAirCookieManager.clearCookies()
-                            GlobalToasts.show("Session cleared locally", level = GlobalToasts.ToastLevel.WARNING)
-                            onLoggedOut()
-                        }
-                    }
+                is OnAirAuthRepo.AuthResult.FormError,
+                is OnAirAuthRepo.AuthResult.NetworkError,
+                is OnAirAuthRepo.AuthResult.LoginRequired -> {
+                    GlobalToasts.show(
+                        "Session cleared locally",
+                        level = GlobalToasts.ToastLevel.WARNING,
+                    )
+                    onLoggedOut()
                 }
-            }.onFailure {
-                loggingOut = false
-                showLogoutDialog = false
-                OnAirCookieManager.clearCookies()
-                OnAirProfileCache.clearAll()
-                GlobalToasts.show("Session cleared locally", level = GlobalToasts.ToastLevel.WARNING)
-                onLoggedOut()
             }
         }
     }

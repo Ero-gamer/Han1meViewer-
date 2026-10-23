@@ -20,7 +20,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.widthimport androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -31,6 +32,7 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -200,56 +202,25 @@ fun OnAirCookieSettingsScreen(
     fun performLogout() {
         loggingOut = true
         scope.launch {
-            runCatching {
-                var token: String? = null
-                OnAirAuthRepo.fetchLogoutToken().collect { token = it }
-                val t = token
-                if (t.isNullOrBlank()) {
-                    OnAirCookieManager.clearCookies()
-                    OnAirProfileCache.clearAll()
-                    profile = null
-                    loggingOut = false
-                    showLogoutDialog = false
+            val result = OnAirAuthRepo.performLogout()
+            loggingOut = false
+            showLogoutDialog = false
+            OnAirProfileCache.clearAll()
+            profile = null
+            when (result) {
+                is OnAirAuthRepo.AuthResult.Success -> {
+                    GlobalToasts.show("Logged out", level = GlobalToasts.ToastLevel.SUCCESS)
+                    onLoggedOut?.invoke()
+                }
+                is OnAirAuthRepo.AuthResult.FormError,
+                is OnAirAuthRepo.AuthResult.NetworkError,
+                is OnAirAuthRepo.AuthResult.LoginRequired -> {
                     GlobalToasts.show(
                         "Session cleared locally",
-                        level = GlobalToasts.ToastLevel.INFO,
+                        level = GlobalToasts.ToastLevel.WARNING,
                     )
                     onLoggedOut?.invoke()
-                    return@launch
                 }
-                OnAirAuthRepo.logout(t).collect { result ->
-                    loggingOut = false
-                    showLogoutDialog = false
-                    OnAirProfileCache.clearAll()
-                    profile = null
-                    when (result) {
-                        is OnAirAuthRepo.AuthResult.Success -> {
-                            GlobalToasts.show("Logged out", level = GlobalToasts.ToastLevel.SUCCESS)
-                            onLoggedOut?.invoke()
-                        }
-                        is OnAirAuthRepo.AuthResult.FormError,
-                        is OnAirAuthRepo.AuthResult.NetworkError,
-                        is OnAirAuthRepo.AuthResult.LoginRequired -> {
-                            OnAirCookieManager.clearCookies()
-                            GlobalToasts.show(
-                                "Session cleared locally",
-                                level = GlobalToasts.ToastLevel.WARNING,
-                            )
-                            onLoggedOut?.invoke()
-                        }
-                    }
-                }
-            }.onFailure {
-                loggingOut = false
-                showLogoutDialog = false
-                OnAirCookieManager.clearCookies()
-                OnAirProfileCache.clearAll()
-                profile = null
-                GlobalToasts.show(
-                    "Session cleared locally",
-                    level = GlobalToasts.ToastLevel.WARNING,
-                )
-                onLoggedOut?.invoke()
             }
         }
     }
@@ -670,7 +641,7 @@ private fun SignedInCard(
                     Button(
                         onClick = onLogout,
                         modifier = Modifier.weight(1f),
-                        colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                        colors = ButtonDefaults.buttonColors(
                             containerColor = MaterialTheme.colorScheme.error,
                             contentColor = MaterialTheme.colorScheme.onError,
                         ),

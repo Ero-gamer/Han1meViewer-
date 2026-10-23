@@ -61,7 +61,7 @@ object OnAirAuthRepo {
         try {
             val body = FormBody.Builder()
                 .add("csrf_token", challenge.csrfToken)
-                .add(challenge.honeypotName, "")
+                .apply { if (challenge.honeypotName.isNotBlank()) add(challenge.honeypotName, "") }
                 .add("username", username)
                 .add("password", password)
                 .add("captcha_answer", captchaAnswer)
@@ -126,7 +126,7 @@ object OnAirAuthRepo {
             val body = FormBuilder()
                 .add("csrf_token", challenge.csrfToken)
                 .add("ref_code", refCode)
-                .add(challenge.honeypotName, "")
+                .apply { if (challenge.honeypotName.isNotBlank()) add(challenge.honeypotName, "") }
                 .add("username", username)
                 .add("password", password)
                 .add("confirm", confirm)
@@ -222,6 +222,30 @@ object OnAirAuthRepo {
         }
     }.flowOn(Dispatchers.IO)
 
+    suspend fun performLogout(): AuthResult {
+        return try {
+            var token: String? = null
+            fetchLogoutToken().collect { token = it }
+            val t = token
+            if (t.isNullOrBlank()) {
+                OnAirCookieManager.clearCookies()
+                return AuthResult.Success
+            }
+            var result: AuthResult = AuthResult.NetworkError(
+                IllegalStateException("Logout produced no result")
+            )
+            logout(t).collect { result = it }
+            if (result !is AuthResult.Success) {
+                OnAirCookieManager.clearCookies()
+            }
+            result
+        } catch (e: Exception) {
+            Log.e(TAG, "performLogout failed, clearing cookies", e)
+            OnAirCookieManager.clearCookies()
+            AuthResult.NetworkError(e)
+        }
+    }
+
     fun currentUsernameHint(): String? {
         val raw = OnAirCookieManager.cookiesRaw
         if (raw.isBlank()) return null
@@ -251,12 +275,20 @@ object OnAirAuthRepo {
 
     private fun parseCaptchaChallenge(html: String, kind: String): CaptchaChallenge {
         val doc = Jsoup.parse(html, baseUrl)
-        val csrfToken = doc.selectFirst("input[name=csrf_token]")?.attr("value")
-            ?: error("Missing csrf_token on /$kind")
-        val honeypot = doc.selectFirst("input[name^=hp_]")
-            ?.attr("name")
+        val csrfToken = doc.selectFirst("form.stack-form input[name=csrf_token]")
+            ?.attr("value")
             ?.takeIf { it.isNotBlank() }
-            ?: error("Missing honeypot field on /$kind")
+            ?: doc.selectFirst("input[name=csrf_token]")?.attr("value")
+                ?.takeIf { it.isNotBlank() }
+            ?: error("Missing csrf_token on /$kind")
+
+        val honeypot = doc.selectFirst("input[name^=hp_]")?.attr("name")
+            ?.takeIf { it.isNotBlank() }
+            ?: doc.selectFirst("input[name=company], input[name=website], input[name=url]")
+                ?.attr("name")
+                ?.takeIf { it.isNotBlank() }
+            ?: ""
+
         val refCode = doc.selectFirst("input[name=ref_code]")?.attr("value").orEmpty()
         val extra = if (kind == "register") mapOf("ref_code" to refCode) else emptyMap()
         return CaptchaChallenge(
@@ -269,16 +301,24 @@ object OnAirAuthRepo {
 
     private fun isLoginForm(html: String): Boolean {
         if (html.isBlank()) return false
-        return html.contains("name=\"password\"", ignoreCase = true) &&
-                html.contains("name=\"csrf_token\"", ignoreCase = true) &&
-                html.contains("action=\"/login\"", ignoreCase = true)
+        val hasPassword = html.contains("name=\"password\"", ignoreCase = true)
+        val hasCsrf = html.contains("name=\"csrf_token\"", ignoreCase = true)
+        if (!hasPassword || !hasCsrf) return false
+        val titleLogin = html.contains(">Log in<", ignoreCase = true) ||
+                html.contains(">Login<", ignoreCase = true)
+        val actionLogin = html.contains("action=\"/login\"", ignoreCase = true)
+        return titleLogin || actionLogin
     }
 
     private fun isRegisterForm(html: String): Boolean {
         if (html.isBlank()) return false
-        return html.contains("name=\"confirm\"", ignoreCase = true) &&
-                html.contains("name=\"csrf_token\"", ignoreCase = true) &&
-                html.contains("action=\"/register\"", ignoreCase = true)
+        val hasConfirm = html.contains("name=\"confirm\"", ignoreCase = true)
+        val hasCsrf = html.contains("name=\"csrf_token\"", ignoreCase = true)
+        if (!hasConfirm || !hasCsrf) return false
+        val titleSignup = html.contains(">Sign up<", ignoreCase = true) ||
+                html.contains(">Register<", ignoreCase = true)
+        val actionRegister = html.contains("action=\"/register\"", ignoreCase = true)
+        return titleSignup || actionRegister
     }
 
     private fun hasAuthenticatedMarker(html: String): Boolean {

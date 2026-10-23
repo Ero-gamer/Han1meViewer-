@@ -69,11 +69,15 @@ fun OnAirRegisterScreen(
     var submitting by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var captchaNonce by remember { mutableStateOf(0L) }
+    var preserveErrorOnRefresh by remember { mutableStateOf(false) }
 
     fun refreshChallenge() {
         captchaLoading = true
         challenge = null
-        errorMessage = null
+        if (!preserveErrorOnRefresh) {
+            errorMessage = null
+        }
+        preserveErrorOnRefresh = false
         captchaAnswer = ""
         scope.launch {
             try {
@@ -128,10 +132,12 @@ fun OnAirRegisterScreen(
                     }
                     is OnAirAuthRepo.AuthResult.LoginRequired -> {
                         errorMessage = "Your session was rejected. Try again."
+                        preserveErrorOnRefresh = true
                         captchaNonce = System.currentTimeMillis()
                     }
                     is OnAirAuthRepo.AuthResult.FormError -> {
                         errorMessage = result.message
+                        preserveErrorOnRefresh = true
                         captchaNonce = System.currentTimeMillis()
                     }
                     is OnAirAuthRepo.AuthResult.NetworkError -> {
