@@ -69,6 +69,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.viewmodel.compose.viewModel
 import coil3.compose.AsyncImage
 import com.yenaly.han1meviewer.OnAir.data.local.OnAirProfileCache
 import com.yenaly.han1meviewer.OnAir.data.model.OnAirUserProfile
@@ -361,6 +362,12 @@ fun OnAirCookieSettingsScreen(
                 showProgressBar = showProgressBar,
                 reloadProgress = reloadProgress,
                 onClick = { runTorAndReload() },
+            )
+
+            val mirrorStatusVm: OnAirMirrorStatusViewModel = viewModel()
+            OnAirMirrorStatusCard(
+                viewModel = mirrorStatusVm,
+                onSwitchSite = onSwitchSite,
             )
 
             Card(
