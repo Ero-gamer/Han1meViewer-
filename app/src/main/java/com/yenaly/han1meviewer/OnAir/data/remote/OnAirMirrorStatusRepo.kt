@@ -25,7 +25,9 @@ object OnAirMirrorStatusRepo {
         .build()
 
     suspend fun check(host: String): OnAirMirrorStatus = withContext(Dispatchers.IO) {
-        if (host.isBlank()) return@withContext OnAirMirrorStatus.Error(host, "Empty host")
+        if (host.isBlank()) {
+            return@withContext OnAirMirrorStatus.Error(host, "Empty host")
+        }
         try {
             val body = FormBody.Builder().add("url", host).build()
             val request = Request.Builder()
@@ -40,12 +42,10 @@ object OnAirMirrorStatusRepo {
                     val html = resp.body?.string().orEmpty()
                     Log.d(TAG, "check($host): http=${resp.code} htmlLen=${html.length}")
                     if (!resp.isSuccessful && html.isBlank()) {
-                        return@withContext OnAirMirrorStatus.Error(
-                            host,
-                            "TorWatch HTTP ${resp.code}",
-                        )
+                        OnAirMirrorStatus.Error(host, "TorWatch HTTP ${resp.code}")
+                    } else {
+                        TorWatchStatusParser.parse(html, host)
                     }
-                    TorWatchStatusParser.parse(html, host)
                 }
             }
         } catch (e: Exception) {
