@@ -126,6 +126,10 @@ fun OnAirRegisterScreen(
                         )
                         onSuccess()
                     }
+                    is OnAirAuthRepo.AuthResult.LoginRequired -> {
+                        errorMessage = "Your session was rejected. Try again."
+                        captchaNonce = System.currentTimeMillis()
+                    }
                     is OnAirAuthRepo.AuthResult.FormError -> {
                         errorMessage = result.message
                         captchaNonce = System.currentTimeMillis()

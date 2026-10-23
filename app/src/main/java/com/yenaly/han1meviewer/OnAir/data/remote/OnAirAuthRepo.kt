@@ -27,6 +27,7 @@ object OnAirAuthRepo {
         data object Success : AuthResult
         data class FormError(val message: String) : AuthResult
         data class NetworkError(val throwable: Throwable) : AuthResult
+        data object LoginRequired : AuthResult
     }
 
     fun fetchLoginCaptcha() = flow {
@@ -81,26 +82,29 @@ object OnAirAuthRepo {
                     "login response: code=$code, location=$location, htmlLen=${finalHtml.length}",
                 )
 
-                val looksLikeLoginPage =
-                    finalHtml.contains("name=\"password\"", ignoreCase = true) &&
-                            finalHtml.contains("name=\"csrf_token\"", ignoreCase = true)
-
+                val looksLikeLoginPage = isLoginForm(finalHtml)
+                val isAuthenticatedPage = hasAuthenticatedMarker(finalHtml)
                 val extracted = extractAndSaveCookies()
 
-                if (code in 200..399 && extracted && !looksLikeLoginPage) {
+                if (code in 200..399 && isAuthenticatedPage) {
                     emit(AuthResult.Success)
                     return@use
                 }
 
-                if (code in 200..399 && !looksLikeLoginPage && !extracted) {
+                if (code in 200..399 && !looksLikeLoginPage && extracted) {
                     emit(AuthResult.Success)
+                    return@use
+                }
+
+                if (code == 401 || code == 403) {
+                    emit(AuthResult.LoginRequired)
                     return@use
                 }
 
                 val error = parseFormError(finalHtml)
                 emit(
                     AuthResult.FormError(
-                        error ?: "Login failed (HTTP $code${if (location.isNotBlank()) " → $location" else ""})"
+                        error ?: buildFallback("Login failed", code, location)
                     )
                 )
             }
@@ -144,26 +148,29 @@ object OnAirAuthRepo {
                     "register response: code=$code, location=$location, htmlLen=${finalHtml.length}",
                 )
 
-                val looksLikeRegisterPage =
-                    finalHtml.contains("name=\"confirm\"", ignoreCase = true) &&
-                            finalHtml.contains("name=\"csrf_token\"", ignoreCase = true)
-
+                val looksLikeRegisterPage = isRegisterForm(finalHtml)
+                val isAuthenticatedPage = hasAuthenticatedMarker(finalHtml)
                 val extracted = extractAndSaveCookies()
 
-                if (code in 200..399 && extracted && !looksLikeRegisterPage) {
+                if (code in 200..399 && isAuthenticatedPage) {
                     emit(AuthResult.Success)
                     return@use
                 }
 
-                if (code in 200..399 && !looksLikeRegisterPage && !extracted) {
+                if (code in 200..399 && !looksLikeRegisterPage && extracted) {
                     emit(AuthResult.Success)
+                    return@use
+                }
+
+                if (code == 401 || code == 403) {
+                    emit(AuthResult.LoginRequired)
                     return@use
                 }
 
                 val error = parseFormError(finalHtml)
                 emit(
                     AuthResult.FormError(
-                        error ?: "Registration failed (HTTP $code${if (location.isNotBlank()) " → $location" else ""})"
+                        error ?: buildFallback("Registration failed", code, location)
                     )
                 )
             }
@@ -260,20 +267,59 @@ object OnAirAuthRepo {
         )
     }
 
+    private fun isLoginForm(html: String): Boolean {
+        if (html.isBlank()) return false
+        return html.contains("name=\"password\"", ignoreCase = true) &&
+                html.contains("name=\"csrf_token\"", ignoreCase = true) &&
+                html.contains("action=\"/login\"", ignoreCase = true)
+    }
+
+    private fun isRegisterForm(html: String): Boolean {
+        if (html.isBlank()) return false
+        return html.contains("name=\"confirm\"", ignoreCase = true) &&
+                html.contains("name=\"csrf_token\"", ignoreCase = true) &&
+                html.contains("action=\"/register\"", ignoreCase = true)
+    }
+
+    private fun hasAuthenticatedMarker(html: String): Boolean {
+        if (html.isBlank()) return false
+        return html.contains("summary class=\"nav-username\"", ignoreCase = true) ||
+                html.contains("class=\"nav-username\"", ignoreCase = true) ||
+                html.contains("action=\"/logout\"", ignoreCase = true)
+    }
+
+    private fun buildFallback(prefix: String, code: Int, location: String): String {
+        val suffix = if (location.isNotBlank()) " → $location" else ""
+        return "$prefix (HTTP $code$suffix)"
+    }
+
     private fun parseFormError(html: String): String? {
         if (html.isBlank()) return null
         val doc = Jsoup.parse(html, baseUrl)
-        val candidates = listOf(
+        val selectors = listOf(
             ".form-error",
+            "p.form-error",
             ".alert-danger",
             ".invalid-feedback",
             ".text-danger",
             ".help-block",
+            ".error",
+            ".error-message",
+            ".msg-error",
+            ".field-error",
+            ".flash-error",
+            "#error",
+            "#form-error",
         )
-        candidates.forEach { sel ->
+        for (sel in selectors) {
             doc.select(sel).map { it.text().trim() }
                 .firstOrNull { it.isNotBlank() }
                 ?.let { return it }
+        }
+        val attrCandidates = doc.select("[data-error], [data-error-message]")
+        for (el in attrCandidates) {
+            val txt = el.attr("data-error").ifBlank { el.attr("data-error-message") }.trim()
+            if (txt.isNotBlank()) return txt
         }
         return null
     }
@@ -286,10 +332,10 @@ object OnAirAuthRepo {
             f.get(OnAirNetwork) as? OnAirCookieJar
         }.getOrNull() ?: return false
 
-        val cookieStoreField = OnAirCookieJar.javaClass.getDeclaredField("cookieStore")
-        cookieStoreField.isAccessible = true
+        val storeField = OnAirCookieJar.javaClass.getDeclaredField("cookieStore")
+        storeField.isAccessible = true
         @Suppress("UNCHECKED_CAST")
-        val store = cookieStoreField.get(jar) as? Map<String, Map<String, okhttp3.Cookie>>
+        val store = storeField.get(jar) as? Map<String, Map<String, okhttp3.Cookie>>
             ?: return false
 
         val all = store.values.flatMap { it.values }

@@ -20,13 +20,13 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.layout.widthimport androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material3.AlertDialog
@@ -42,6 +42,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -49,6 +50,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -58,17 +60,25 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import coil3.compose.AsyncImage
+import com.yenaly.han1meviewer.OnAir.data.local.OnAirProfileCache
+import com.yenaly.han1meviewer.OnAir.data.model.OnAirUserProfile
 import com.yenaly.han1meviewer.OnAir.data.remote.CookieFormat
+import com.yenaly.han1meviewer.OnAir.data.remote.OnAirAuthRepo
 import com.yenaly.han1meviewer.OnAir.data.remote.OnAirCookieManager
 import com.yenaly.han1meviewer.OnAir.data.remote.OnAirNetwork
+import com.yenaly.han1meviewer.OnAir.data.remote.OnAirNetworkRepo
 import com.yenaly.han1meviewer.OnAir.data.remote.OnAirTorChecker
 import com.yenaly.han1meviewer.OnAir.data.remote.OnAirTorStatus
 import com.yenaly.han1meviewer.OnAir.ui.gate.OnAirGateState
+import com.yenaly.han1meviewer.logic.state.VideoLoadingState
 import com.yenaly.han1meviewer.ui.component.GlobalToasts
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -87,6 +97,7 @@ fun OnAirCookieSettingsScreen(
     onOpenRegister: () -> Unit,
     onSwitchSite: () -> Unit = {},
     onCookiesSaved: () -> Unit = onBack,
+    onLoggedOut: (() -> Unit)? = null,
     gateState: OnAirGateState? = null,
 ) {
     val clipboard = LocalClipboardManager.current
@@ -96,11 +107,18 @@ fun OnAirCookieSettingsScreen(
     var isSaving by remember { mutableStateOf(false) }
     var showSavedDialog by remember { mutableStateOf(false) }
     var showClearDialog by remember { mutableStateOf(false) }
+    var showLogoutDialog by remember { mutableStateOf(false) }
+    var loggingOut by remember { mutableStateOf(false) }
 
     var torState by remember { mutableStateOf(TorBubbleState.Checking) }
     var torStatus by remember { mutableStateOf<OnAirTorStatus?>(null) }
     var reloadProgress by remember { mutableFloatStateOf(0f) }
     var showProgressBar by remember { mutableStateOf(false) }
+
+    val hasCookies = OnAirCookieManager.hasCookies
+    var profile by remember { mutableStateOf<OnAirUserProfile?>(OnAirProfileCache.current()) }
+    var profileLoading by remember { mutableIntStateOf(0) }
+    val usernameHint = remember(hasCookies) { OnAirAuthRepo.currentUsernameHint() }
 
     val detectedFormat = remember(cookieInput) { OnAirCookieManager.detectFormat(cookieInput) }
     val formatLabel = when (detectedFormat) {
@@ -108,6 +126,30 @@ fun OnAirCookieSettingsScreen(
         CookieFormat.NETSCAPE -> "Netscape"
         CookieFormat.RAW_STRING -> "Raw Cookie String"
         CookieFormat.UNKNOWN -> "Unknown"
+    }
+
+    fun refreshProfile() {
+        val name = profile?.username
+            ?: OnAirProfileCache.getCurrentUsername()
+            ?: usernameHint
+            ?: return
+        profileLoading += 1
+        scope.launch {
+            OnAirNetworkRepo.getUserProfile(name).collect { s ->
+                when (s) {
+                    is VideoLoadingState.Success -> {
+                        profile = s.info
+                        OnAirProfileCache.put(s.info.username, s.info)
+                    }
+                    else -> Unit
+                }
+                profileLoading = (profileLoading - 1).coerceAtLeast(0)
+            }
+        }
+    }
+
+    LaunchedEffect(hasCookies) {
+        if (hasCookies && profile == null) refreshProfile()
     }
 
     fun runTorAndReload() {
@@ -155,6 +197,63 @@ fun OnAirCookieSettingsScreen(
         }
     }
 
+    fun performLogout() {
+        loggingOut = true
+        scope.launch {
+            runCatching {
+                var token: String? = null
+                OnAirAuthRepo.fetchLogoutToken().collect { token = it }
+                val t = token
+                if (t.isNullOrBlank()) {
+                    OnAirCookieManager.clearCookies()
+                    OnAirProfileCache.clearAll()
+                    profile = null
+                    loggingOut = false
+                    showLogoutDialog = false
+                    GlobalToasts.show(
+                        "Session cleared locally",
+                        level = GlobalToasts.ToastLevel.INFO,
+                    )
+                    onLoggedOut?.invoke()
+                    return@launch
+                }
+                OnAirAuthRepo.logout(t).collect { result ->
+                    loggingOut = false
+                    showLogoutDialog = false
+                    OnAirProfileCache.clearAll()
+                    profile = null
+                    when (result) {
+                        is OnAirAuthRepo.AuthResult.Success -> {
+                            GlobalToasts.show("Logged out", level = GlobalToasts.ToastLevel.SUCCESS)
+                            onLoggedOut?.invoke()
+                        }
+                        is OnAirAuthRepo.AuthResult.FormError,
+                        is OnAirAuthRepo.AuthResult.NetworkError,
+                        is OnAirAuthRepo.AuthResult.LoginRequired -> {
+                            OnAirCookieManager.clearCookies()
+                            GlobalToasts.show(
+                                "Session cleared locally",
+                                level = GlobalToasts.ToastLevel.WARNING,
+                            )
+                            onLoggedOut?.invoke()
+                        }
+                    }
+                }
+            }.onFailure {
+                loggingOut = false
+                showLogoutDialog = false
+                OnAirCookieManager.clearCookies()
+                OnAirProfileCache.clearAll()
+                profile = null
+                GlobalToasts.show(
+                    "Session cleared locally",
+                    level = GlobalToasts.ToastLevel.WARNING,
+                )
+                onLoggedOut?.invoke()
+            }
+        }
+    }
+
     LaunchedEffect(Unit) { runTorAndReload() }
 
     Scaffold(
@@ -173,7 +272,7 @@ fun OnAirCookieSettingsScreen(
                     IconButton(onClick = onSwitchSite) {
                         Icon(Icons.Default.SwapHoriz, contentDescription = "Switch site")
                     }
-                    if (OnAirCookieManager.hasCookies) {
+                    if (hasCookies) {
                         TextButton(onClick = {
                             clipboard.setText(AnnotatedString(OnAirCookieManager.cookiesRaw))
                             GlobalToasts.show(
@@ -194,6 +293,17 @@ fun OnAirCookieSettingsScreen(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
+            SignedInCard(
+                hasCookies = hasCookies,
+                profile = profile,
+                usernameHint = usernameHint,
+                profileLoading = profileLoading,
+                onRefresh = { refreshProfile() },
+                onLogout = { showLogoutDialog = true },
+                onOpenLogin = onOpenLogin,
+                onOpenRegister = onOpenRegister,
+            )
+
             when (val gs = gateState) {
                 is OnAirGateState.ContentError -> {
                     Card(
@@ -362,41 +472,8 @@ fun OnAirCookieSettingsScreen(
                 }
                 TextButton(
                     onClick = { showClearDialog = true },
-                    enabled = OnAirCookieManager.hasCookies,
+                    enabled = hasCookies,
                 ) { Text("Clear") }
-            }
-
-            Spacer(Modifier.height(4.dp))
-
-            Card(
-                shape = RoundedCornerShape(12.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-                ),
-            ) {
-                Column(
-                    modifier = Modifier.padding(12.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    Text(
-                        text = "Login with username & password",
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.Bold,
-                    )
-                    Text(
-                        text = "Sign in to your OnAir account. Cookies will be saved automatically after login.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    Button(
-                        onClick = onOpenLogin,
-                        modifier = Modifier.fillMaxWidth(),
-                    ) { Text("Log in") }
-                    OutlinedButton(
-                        onClick = onOpenRegister,
-                        modifier = Modifier.fillMaxWidth(),
-                    ) { Text("Create account") }
-                }
             }
         }
     }
@@ -424,6 +501,8 @@ fun OnAirCookieSettingsScreen(
                 TextButton(onClick = {
                     showClearDialog = false
                     OnAirCookieManager.clearCookies()
+                    OnAirProfileCache.clearAll()
+                    profile = null
                     cookieInput = ""
                     GlobalToasts.show("Cookies cleared", level = GlobalToasts.ToastLevel.INFO)
                 }) { Text("Clear", color = MaterialTheme.colorScheme.error) }
@@ -432,6 +511,190 @@ fun OnAirCookieSettingsScreen(
                 TextButton(onClick = { showClearDialog = false }) { Text("Cancel") }
             },
         )
+    }
+
+    if (showLogoutDialog) {
+        AlertDialog(
+            onDismissRequest = { if (!loggingOut) showLogoutDialog = false },
+            title = { Text("Log out of OnAir?") },
+            text = { Text("Your session cookies will be removed from this device.") },
+            confirmButton = {
+                TextButton(
+                    onClick = { performLogout() },
+                    enabled = !loggingOut,
+                ) {
+                    if (loggingOut) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(16.dp),
+                            strokeWidth = 2.dp,
+                        )
+                    } else {
+                        Text("Log out", color = MaterialTheme.colorScheme.error)
+                    }
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { showLogoutDialog = false },
+                    enabled = !loggingOut,
+                ) { Text("Cancel") }
+            },
+        )
+    }
+}
+
+@Composable
+private fun SignedInCard(
+    hasCookies: Boolean,
+    profile: OnAirUserProfile?,
+    usernameHint: String?,
+    profileLoading: Int,
+    onRefresh: () -> Unit,
+    onLogout: () -> Unit,
+    onOpenLogin: () -> Unit,
+    onOpenRegister: () -> Unit,
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(14.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = if (hasCookies) {
+                MaterialTheme.colorScheme.primaryContainer
+            } else {
+                MaterialTheme.colorScheme.surfaceContainerHigh
+            },
+        ),
+    ) {
+        Column(
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    modifier = Modifier
+                        .size(48.dp)
+                        .clip(CircleShape),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    val avatar = profile?.avatarUrl
+                    if (!avatar.isNullOrBlank()) {
+                        AsyncImage(
+                            model = avatar,
+                            contentDescription = profile?.displayName,
+                            modifier = Modifier.fillMaxSize(),
+                            contentScale = ContentScale.Crop,
+                        )
+                    } else {
+                        Surface(
+                            shape = CircleShape,
+                            color = if (hasCookies) {
+                                MaterialTheme.colorScheme.primary
+                            } else {
+                                MaterialTheme.colorScheme.surfaceVariant
+                            },
+                            modifier = Modifier.fillMaxSize(),
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                val label = profile?.displayName?.firstOrNull()?.uppercase()
+                                    ?: usernameHint?.firstOrNull()?.uppercase()
+                                    ?: if (hasCookies) "?" else "×"
+                                Text(
+                                    text = label,
+                                    style = MaterialTheme.typography.titleMedium,
+                                    color = if (hasCookies) {
+                                        MaterialTheme.colorScheme.onPrimary
+                                    } else {
+                                        MaterialTheme.colorScheme.onSurfaceVariant
+                                    },
+                                    fontWeight = FontWeight.Bold,
+                                )
+                            }
+                        }
+                    }
+                }
+                Spacer(Modifier.width(12.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = when {
+                                profile != null -> profile.displayName
+                                !usernameHint.isNullOrBlank() -> usernameHint
+                                hasCookies -> "Signed in"
+                                else -> "Not signed in"
+                            },
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.SemiBold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        if (profileLoading > 0) {
+                            Spacer(Modifier.width(8.dp))
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(12.dp),
+                                strokeWidth = 2.dp,
+                            )
+                        }
+                    }
+                    Text(
+                        text = if (hasCookies) {
+                            "Session cookies active on this device"
+                        } else {
+                            "No session cookies on this device"
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (hasCookies) {
+                            MaterialTheme.colorScheme.onPrimaryContainer
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        },
+                    )
+                }
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                if (hasCookies) {
+                    OutlinedButton(
+                        onClick = onRefresh,
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Icon(
+                            Icons.Default.Refresh,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp),
+                        )
+                        Spacer(Modifier.width(6.dp))
+                        Text("Refresh profile")
+                    }
+                    Button(
+                        onClick = onLogout,
+                        modifier = Modifier.weight(1f),
+                        colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.error,
+                            contentColor = MaterialTheme.colorScheme.onError,
+                        ),
+                    ) {
+                        Icon(
+                            Icons.AutoMirrored.Filled.Logout,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp),
+                        )
+                        Spacer(Modifier.width(6.dp))
+                        Text("Log out")
+                    }
+                } else {
+                    Button(
+                        onClick = onOpenLogin,
+                        modifier = Modifier.weight(1f),
+                    ) { Text("Log in") }
+                    OutlinedButton(
+                        onClick = onOpenRegister,
+                        modifier = Modifier.weight(1f),
+                    ) { Text("Create account") }
+                }
+            }
+        }
     }
 }
 

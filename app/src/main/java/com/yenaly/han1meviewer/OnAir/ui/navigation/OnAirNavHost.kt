@@ -287,6 +287,7 @@ fun OnAirNavHost(
                         onOpenRegister = { navController.navigateSafely(OnAirRegisterRoute) },
                         onSwitchSite = { activity.requestSiteSwitch() },
                         onCookiesSaved = { retryTick = System.currentTimeMillis() },
+                        onLoggedOut = { retryTick = System.currentTimeMillis() },
                     )
                 }
 
@@ -297,7 +298,7 @@ fun OnAirNavHost(
                         onSuccess = {
                             OnAirProfileCache.invalidate()
                             retryTick = System.currentTimeMillis()
-                            navController.popBackStack()
+                            navController.popBackStack(OnAirHomeRoute, inclusive = false)
                         },
                     )
                 }
@@ -309,7 +310,7 @@ fun OnAirNavHost(
                         onSuccess = {
                             OnAirProfileCache.invalidate()
                             retryTick = System.currentTimeMillis()
-                            navController.popBackStack()
+                            navController.popBackStack(OnAirHomeRoute, inclusive = false)
                         },
                     )
                 }
@@ -366,6 +367,7 @@ fun OnAirNavHost(
                         },
                         onSwitchSite = { activity.requestSiteSwitch() },
                         onCookiesSaved = { retryTick = System.currentTimeMillis() },
+                        onLoggedOut = { retryTick = System.currentTimeMillis() },
                         gateState = activeState,
                     )
                 }

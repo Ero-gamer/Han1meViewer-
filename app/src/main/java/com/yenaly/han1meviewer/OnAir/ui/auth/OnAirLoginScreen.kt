@@ -1,15 +1,12 @@
 package com.yenaly.han1meviewer.OnAir.ui.auth
 
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -113,8 +110,13 @@ fun OnAirLoginScreen(
                         )
                         onSuccess()
                     }
+                    is OnAirAuthRepo.AuthResult.LoginRequired -> {
+                        errorMessage = "Your session was rejected. Try again."
+                        captchaNonce = System.currentTimeMillis()
+                    }
                     is OnAirAuthRepo.AuthResult.FormError -> {
                         errorMessage = result.message
+                        captchaNonce = System.currentTimeMillis()
                     }
                     is OnAirAuthRepo.AuthResult.NetworkError -> {
                         errorMessage = result.throwable.message ?: "Network error"
