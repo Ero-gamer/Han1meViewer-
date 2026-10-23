@@ -28,7 +28,6 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -52,13 +51,8 @@ fun OnAirMirrorStatusCard(
 ) {
     val hosts = OnAirConstants.ONAIR_HOSTNAME.toList()
 
-    LaunchedEffect(Unit) {
-        if (viewModel.statuses.isEmpty() && !viewModel.checkingAll) {
-            viewModel.checkAll()
-        }
-    }
-
     var showPicker by remember { mutableStateOf(false) }
+    var pendingSwitchHost by remember { mutableStateOf<String?>(null) }
 
     Card(
         modifier = modifier.fillMaxWidth(),
@@ -104,7 +98,11 @@ fun OnAirMirrorStatusCard(
                     status = viewModel.statuses[host],
                     isSelected = host == viewModel.selectedHost,
                     onCheck = { viewModel.checkOne(host) },
-                    onSelect = { viewModel.switchTo(host) },
+                    onSelect = {
+                        if (host != viewModel.selectedHost) {
+                            pendingSwitchHost = host
+                        }
+                    },
                 )
             }
 
@@ -138,8 +136,8 @@ fun OnAirMirrorStatusCard(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clickable {
-                                    viewModel.switchTo(host)
                                     showPicker = false
+                                    if (!selected) pendingSwitchHost = host
                                 }
                                 .padding(vertical = 8.dp, horizontal = 4.dp),
                             verticalAlignment = Alignment.CenterVertically,
@@ -153,6 +151,29 @@ fun OnAirMirrorStatusCard(
             },
             confirmButton = {
                 TextButton(onClick = { showPicker = false }) { Text("Close") }
+            },
+        )
+    }
+
+    pendingSwitchHost?.let { target ->
+        AlertDialog(
+            onDismissRequest = { pendingSwitchHost = null },
+            title = { Text("Switch OnAir mirror?") },
+            text = {
+                Text(
+                    "This will switch the active mirror to:\n\n$target\n\n" +
+                            "OnAir network will be rebuilt and you may need to sign in again " +
+                            "if the session cookies are not valid on this mirror.",
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    pendingSwitchHost = null
+                    viewModel.switchTo(target)
+                }) { Text("Confirm") }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingSwitchHost = null }) { Text("Cancel") }
             },
         )
     }
