@@ -1,6 +1,5 @@
 package com.yenaly.han1meviewer.OnAir.data.remote
 
-import android.content.Context
 import android.util.Log
 import androidx.core.content.edit
 import com.yenaly.han1meviewer.Preferences
@@ -44,6 +43,14 @@ object OnAirCookieManager {
         OnAirNetwork.refreshCookieJar()
         _cookiesFlow.value = raw
         Log.d(TAG, "saveCookies: ${raw.length} chars")
+    }
+
+    fun persistOnly(raw: String) {
+        Preferences.preferenceSp.edit(commit = true) {
+            putString(PREF_ONAIR_COOKIES, raw)
+        }
+        _cookiesFlow.value = raw
+        Log.d(TAG, "persistOnly: ${raw.length} chars")
     }
 
     fun clearCookies() {
@@ -116,10 +123,19 @@ object OnAirCookieManager {
                 val path = obj.optString("path").takeIf { it.isNotBlank() } ?: "/"
                 val secure = obj.optBoolean("secure", false)
                 val httpOnly = obj.optBoolean("httpOnly", false)
-                val expiry = obj.optLong("expirationDate", 0L)
-                    .takeIf { it > 0L }
-                    ?.times(1000L)
-                    ?: Long.MAX_VALUE
+
+                val expiry = when {
+                    obj.has("expiresAt") -> {
+                        val raw = obj.optLong("expiresAt", 0L)
+                        if (raw <= 0L) Long.MAX_VALUE else raw
+                    }
+                    obj.has("expirationDate") -> {
+                        val raw = obj.optLong("expirationDate", 0L)
+                        if (raw <= 0L) Long.MAX_VALUE else raw * 1000L
+                    }
+                    else -> Long.MAX_VALUE
+                }
+
                 runCatching {
                     Cookie.Builder()
                         .domain(domain.removePrefix("."))

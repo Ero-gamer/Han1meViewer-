@@ -4,6 +4,8 @@ import android.util.Log
 import okhttp3.Cookie
 import okhttp3.CookieJar
 import okhttp3.HttpUrl
+import org.json.JSONArray
+import org.json.JSONObject
 import java.util.concurrent.ConcurrentHashMap
 
 class OnAirCookieJar : CookieJar {
@@ -15,7 +17,12 @@ class OnAirCookieJar : CookieJar {
 
     override fun loadForRequest(url: HttpUrl): List<Cookie> {
         val host = url.host
-        val cookies = cookieStore[host]?.values?.toMutableList() ?: mutableListOf()
+        val now = System.currentTimeMillis()
+        val bucket = cookieStore[host] ?: return emptyList()
+        bucket.entries.removeAll { (_, c) ->
+            c.expiresAt != Long.MAX_VALUE && c.expiresAt <= now
+        }
+        val cookies = bucket.values.toMutableList()
         Log.d(TAG, "loadForRequest: $host, cookies=${cookies.size}")
         return cookies
     }
@@ -41,5 +48,34 @@ class OnAirCookieJar : CookieJar {
     fun clearCookies() {
         cookieStore.clear()
         Log.d(TAG, "Cleared all OnAir cookies")
+    }
+
+    fun snapshotJson(): String {
+        val array = JSONArray()
+        val now = System.currentTimeMillis()
+        cookieStore.forEach { (host, bucket) ->
+            bucket.values.forEach { c ->
+                if (c.expiresAt != Long.MAX_VALUE && c.expiresAt <= now) return@forEach
+                val obj = JSONObject()
+                obj.put("domain", c.domain.ifBlank { host })
+                obj.put("path", c.path.ifBlank { "/" })
+                obj.put("name", c.name)
+                obj.put("value", c.value)
+                obj.put("secure", c.secure)
+                obj.put("httpOnly", c.httpOnly)
+                obj.put(
+                    "expiresAt",
+                    if (c.expiresAt == Long.MAX_VALUE) 0L else c.expiresAt,
+                )
+                array.put(obj)
+            }
+        }
+        return array.toString()
+    }
+
+    fun currentCookieNames(): Set<String> {
+        val names = mutableSetOf<String>()
+        cookieStore.values.forEach { bucket -> names.addAll(bucket.keys) }
+        return names
     }
 }

@@ -25,6 +25,9 @@ object OnAirNetwork {
     @Volatile
     private var isInitialized = false
 
+    @Volatile
+    private var lastSavedCookieSnapshot: String? = null
+
     fun init(context: Context) {
         if (isInitialized) return
         synchronized(this) {
@@ -94,6 +97,11 @@ object OnAirNetwork {
                     .build()
                 chain.proceed(request)
             }
+            .addInterceptor { chain ->
+                val response = chain.proceed(chain.request())
+                runCatching { persistJarIfChanged() }
+                response
+            }
             .cookieJar(getOrCreateCookieJar())
             .dns(HDns())
             .proxySelector(HProxySelector())
@@ -103,28 +111,35 @@ object OnAirNetwork {
     private fun getOrCreateCookieJar(): OnAirCookieJar {
         return _cookieJar ?: synchronized(this) {
             _cookieJar ?: OnAirCookieJar().also {
-                it.seed(OnAirCookieManager.parseToCookies(OnAirCookieManager.cookiesRaw, baseUrl))
+                val raw = OnAirCookieManager.cookiesRaw
+                it.seed(OnAirCookieManager.parseToCookies(raw, baseUrl))
+                lastSavedCookieSnapshot = raw
                 _cookieJar = it
             }
         }
     }
 
+    private fun persistJarIfChanged() {
+        val jar = _cookieJar ?: return
+        val snapshot = jar.snapshotJson()
+        if (snapshot.isBlank()) return
+        if (snapshot == lastSavedCookieSnapshot) return
+        lastSavedCookieSnapshot = snapshot
+        OnAirCookieManager.persistOnly(snapshot)
+        android.util.Log.d("OnAirNetwork", "Persisted cookie jar (${snapshot.length} chars)")
+    }
+
     fun refreshCookieJar() {
         val jar = getOrCreateCookieJar()
         jar.clearCookies()
-        val parsed = OnAirCookieManager.parseToCookies(OnAirCookieManager.cookiesRaw, baseUrl)
-        jar.seed(parsed)
+        val raw = OnAirCookieManager.cookiesRaw
+        jar.seed(OnAirCookieManager.parseToCookies(raw, baseUrl))
+        lastSavedCookieSnapshot = raw
     }
 
     fun snapshotCookies(): String {
         val jar = getOrCreateCookieJar()
-        val storeField = OnAirCookieJar::class.java.getDeclaredField("cookieStore")
-        storeField.isAccessible = true
-        @Suppress("UNCHECKED_CAST")
-        val store = storeField.get(jar) as? Map<String, Map<String, okhttp3.Cookie>>
-            ?: return ""
-        val all = store.values.flatMap { it.values }
-        return all.joinToString("; ") { "${it.name}=${it.value}" }
+        return jar.snapshotJson()
     }
 
     fun normalizeUrl(path: String): String {
@@ -139,6 +154,7 @@ object OnAirNetwork {
     fun clearCookies() {
         _cookieJar?.clearCookies()
         _cookieJar = null
+        lastSavedCookieSnapshot = ""
     }
 
     fun rebuildNetwork() {
@@ -147,7 +163,9 @@ object OnAirNetwork {
         _client = null
         _cookieJar?.let {
             it.clearCookies()
-            it.seed(OnAirCookieManager.parseToCookies(OnAirCookieManager.cookiesRaw, baseUrl))
+            val raw = OnAirCookieManager.cookiesRaw
+            it.seed(OnAirCookieManager.parseToCookies(raw, baseUrl))
+            lastSavedCookieSnapshot = raw
         }
     }
 }
