@@ -127,7 +127,7 @@ class OnAirVideoViewModel(application: Application) : AndroidViewModel(applicati
                         applyInitialDetail(detail, preferred)
                         loadResumePosition(videoId)
                         if (_playerState.value.activeStream?.state != StreamState.Ready) {
-                            autoFetchFallbackQuality()
+                            viewModelScope.launch { autoFetchFallbackQuality() }
                         }
                     }
 
@@ -209,7 +209,7 @@ class OnAirVideoViewModel(application: Application) : AndroidViewModel(applicati
         }
     }
 
-    private fun autoFetchFallbackQuality() {
+    private suspend fun autoFetchFallbackQuality() {
         val s = _playerState.value
         val candidates = QUALITY_PRIORITY.filter { q ->
             s.streamsByQuality[q] != null && s.streamsByQuality[q]?.state != StreamState.Ready

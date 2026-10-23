@@ -257,7 +257,7 @@ fun OnAirVideoPlayer(
                 },
                 onRelease = { view ->
                     exoPlayer?.setVideoSurfaceView(null)
-                    view.removeAllChildren()
+                    view.removeAllViews()
                 },
             )
 

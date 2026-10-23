@@ -13,6 +13,7 @@ import com.yenaly.han1meviewer.OnAir.data.parser.OnAirHtmlUtils.cleanText
 import com.yenaly.han1meviewer.OnAir.data.parser.OnAirHtmlUtils.parseTrailingLong
 import com.yenaly.han1meviewer.OnAir.data.parser.OnAirHtmlUtils.parseViews
 import com.yenaly.han1meviewer.OnAir.data.parser.OnAirHtmlUtils.parseViewsCount
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Document
 import org.jsoup.nodes.Element
@@ -189,7 +190,7 @@ object OnAirListingParser {
 
         val jumpAction = jumpForm?.absUrl("action")?.takeIf { it.isNotBlank() }
         val lastUrl = if (jumpAction != null && total > 0) {
-            val builder = okhttp3.HttpUrl.parse(jumpAction)?.newBuilder()
+            val builder = jumpAction.toHttpUrlOrNull()?.newBuilder()
             if (builder != null) {
                 if (hiddenField.isNotBlank()) builder.setQueryParameter("field", hiddenField)
                 if (hiddenSort.isNotBlank()) builder.setQueryParameter("sort", hiddenSort)
