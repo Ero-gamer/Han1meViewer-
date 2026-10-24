@@ -84,14 +84,9 @@ object OnAirAuthRepo {
 
                 val looksLikeLoginPage = isLoginForm(finalHtml)
                 val isAuthenticatedPage = hasAuthenticatedMarker(finalHtml)
-                val extracted = extractAndSaveCookies()
 
-                if (code in 200..399 && isAuthenticatedPage) {
-                    emit(AuthResult.Success)
-                    return@use
-                }
-
-                if (code in 200..399 && !looksLikeLoginPage && extracted) {
+                if (code in 200..399 && (isAuthenticatedPage || !looksLikeLoginPage)) {
+                    saveJarSnapshot()
                     emit(AuthResult.Success)
                     return@use
                 }
@@ -150,14 +145,9 @@ object OnAirAuthRepo {
 
                 val looksLikeRegisterPage = isRegisterForm(finalHtml)
                 val isAuthenticatedPage = hasAuthenticatedMarker(finalHtml)
-                val extracted = extractAndSaveCookies()
 
-                if (code in 200..399 && isAuthenticatedPage) {
-                    emit(AuthResult.Success)
-                    return@use
-                }
-
-                if (code in 200..399 && !looksLikeRegisterPage && extracted) {
+                if (code in 200..399 && (isAuthenticatedPage || !looksLikeRegisterPage)) {
+                    saveJarSnapshot()
                     emit(AuthResult.Success)
                     return@use
                 }
@@ -180,70 +170,9 @@ object OnAirAuthRepo {
         }
     }.flowOn(Dispatchers.IO)
 
-    fun fetchLogoutToken() = flow {
-        try {
-            val response = service.getRaw(baseUrl.trimEnd('/') + "/settings")
-            val html = response.checkedHtml()
-            val doc = Jsoup.parse(html, baseUrl)
-            val token = doc.selectFirst("form[action*=logout] input[name=csrf_token]")
-                ?.attr("value")
-                ?.takeIf { it.isNotBlank() }
-                ?: doc.selectFirst("input[name=csrf_token]")?.attr("value")
-                    ?.takeIf { it.isNotBlank() }
-                ?: error("Missing logout csrf_token on /settings")
-            emit(token)
-        } catch (e: Exception) {
-            Log.e(TAG, "fetchLogoutToken failed", e)
-            throw e
-        }
-    }.flowOn(Dispatchers.IO)
-
-    fun logout(token: String) = flow {
-        try {
-            val body = FormBody.Builder()
-                .add("csrf_token", token)
-                .build()
-            val request = Request.Builder()
-                .url(baseUrl.trimEnd('/') + "/logout")
-                .post(body)
-                .build()
-            OnAirNetwork.sharedOkHttpClient.newCall(request).execute().use { res ->
-                val code = res.code
-                if (code in 200..399) {
-                    OnAirCookieManager.clearCookies()
-                    emit(AuthResult.Success)
-                } else {
-                    emit(AuthResult.FormError("Logout failed (HTTP $code)"))
-                }
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "logout failed", e)
-            emit(AuthResult.NetworkError(e))
-        }
-    }.flowOn(Dispatchers.IO)
-
     suspend fun performLogout(): AuthResult {
-        return try {
-            var token: String? = null
-            fetchLogoutToken().collect { token = it }
-            val t = token
-            if (t.isNullOrBlank()) {
-                OnAirCookieManager.clearCookies()
-                return AuthResult.Success
-            }
-            var result: AuthResult = AuthResult.NetworkError(
-                IllegalStateException("Logout produced no result")
-            )
-            logout(t).collect { result = it }
-            if (result !is AuthResult.Success) {
-                OnAirCookieManager.clearCookies()
-            }
-            result
-        } catch (e: Exception) {
-            Log.e(TAG, "performLogout failed, clearing cookies", e)
-            OnAirCookieManager.clearCookies()
-            AuthResult.NetworkError(e)
-        }
+        OnAirCookieManager.clearCookies()
+        return AuthResult.Success
     }
 
     fun currentUsernameHint(): String? {
@@ -271,6 +200,17 @@ object OnAirAuthRepo {
     private fun Response<ResponseBody>.checkedHtml(): String {
         if (!isSuccessful) throw IllegalStateException("HTTP ${code()}: ${message()}")
         return body()?.string().orEmpty()
+    }
+
+    private fun saveJarSnapshot() {
+        OnAirNetwork.refreshCookieJarFromJar()
+        OnAirCookieManager.replaceWithJarSnapshot()
+        Log.d(
+            TAG,
+            "saveJarSnapshot: jarNames=${OnAirCookieManager.parseToCookies(
+                OnAirCookieManager.cookiesRaw, baseUrl
+            ).map { it.name }}",
+        )
     }
 
     private fun parseCaptchaChallenge(html: String, kind: String): CaptchaChallenge {
@@ -362,28 +302,5 @@ object OnAirAuthRepo {
             if (txt.isNotBlank()) return txt
         }
         return null
-    }
-
-    private fun extractAndSaveCookies(): Boolean {
-        val jar = runCatching {
-            val f = OnAirNetwork.javaClass.getDeclaredField("_cookieJar")
-            f.isAccessible = true
-            @Suppress("UNCHECKED_CAST")
-            f.get(OnAirNetwork) as? OnAirCookieJar
-        }.getOrNull() ?: return false
-
-        val storeField = OnAirCookieJar.javaClass.getDeclaredField("cookieStore")
-        storeField.isAccessible = true
-        @Suppress("UNCHECKED_CAST")
-        val store = storeField.get(jar) as? Map<String, Map<String, okhttp3.Cookie>>
-            ?: return false
-
-        val all = store.values.flatMap { it.values }
-        if (all.isEmpty()) return false
-
-        val raw = all.joinToString("; ") { "${it.name}=${it.value}" }
-        OnAirCookieManager.saveCookies(raw)
-        Log.d(TAG, "Saved cookies after auth: ${all.size}")
-        return true
     }
 }

@@ -17,6 +17,22 @@ class OnAirCookieJar : CookieJar {
                 MutableMap<String, MutableMap<String, Cookie>> = ConcurrentHashMap()
 
         private fun key(c: Cookie): String = "${c.name}@${c.path.ifBlank { "/" }}"
+
+        private fun looksLikeCaptchaSession(c: Cookie): Boolean {
+            if (c.name != "session" && c.name != "laravel_session") return false
+            val v = c.value
+            if (v.length < 24) return false
+            val lower = v.lowercase()
+            if (lower.contains("captcha")) return true
+            if (v.startsWith("eyJjYXB0Y2hh")) return true
+            return false
+        }
+
+        private fun looksLikeAuthSession(c: Cookie): Boolean {
+            if (c.name != "session" && c.name != "laravel_session") return false
+            if (c.value.length < 24) return false
+            return !looksLikeCaptchaSession(c)
+        }
     }
 
     override fun loadForRequest(url: HttpUrl): List<Cookie> {
@@ -52,6 +68,17 @@ class OnAirCookieJar : CookieJar {
             .filter { it.expiresAt == Long.MAX_VALUE || it.expiresAt > now }
             .forEach { c ->
                 val k = key(c)
+                val existing = bucket[k]
+                if (looksLikeCaptchaSession(c) && existing != null &&
+                    looksLikeAuthSession(existing)
+                ) {
+                    Log.w(
+                        TAG,
+                        "refusing to overwrite auth session with captcha session " +
+                                "for ${c.name}@${c.path}",
+                    )
+                    return@forEach
+                }
                 bucket[k] = c
                 Log.d(
                     TAG,

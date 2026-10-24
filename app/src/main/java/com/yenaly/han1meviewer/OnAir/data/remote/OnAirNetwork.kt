@@ -85,21 +85,34 @@ object OnAirNetwork {
             .addInterceptor(UserAgentInterceptor)
             .addInterceptor(UrlLoggingInterceptor())
             .addInterceptor { chain ->
-                val request = chain.request().newBuilder()
+                val request = chain.request()
+                val isNavigation = request.method == "GET" &&
+                        (request.header("Accept")?.contains("text/html") == true)
+                val builder = request.newBuilder()
                     .addHeader("Origin", base.trimEnd('/'))
                     .addHeader("Referer", base)
                     .addHeader(
                         "Accept",
-                        "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                        "text/html,application/xhtml+xml,application/xml;q=0.9," +
+                                "image/avif,image/webp,image/apng,*/*;q=0.8",
                     )
                     .addHeader("Accept-Language", "en-US,en;q=0.9")
+                    .addHeader("Upgrade-Insecure-Requests", "1")
+                    .addHeader("Sec-Fetch-Dest", if (isNavigation) "document" else "empty")
+                    .addHeader("Sec-Fetch-Mode", if (isNavigation) "navigate" else "cors")
+                    .addHeader("Sec-Fetch-Site", "same-origin")
                     .addHeader("Cache-Control", "no-cache")
                     .build()
-                chain.proceed(request)
+                chain.proceed(builder)
             }
             .addInterceptor { chain ->
                 val response = chain.proceed(chain.request())
-                runCatching { persistJarIfChanged() }
+                val url = response.request.url.toString()
+                val code = response.code
+                val body = runCatching {
+                    if (code in 200..299) response.peekBody(128 * 1024).string() else null
+                }.getOrNull()
+                runCatching { persistJarIfChanged(url, code, body) }
                 response
             }
             .cookieJar(getOrCreateCookieJar())
@@ -119,7 +132,17 @@ object OnAirNetwork {
         }
     }
 
-    private fun persistJarIfChanged() {
+    private fun persistJarIfChanged(url: String, code: Int, body: String?) {
+        if (url.contains("/login", ignoreCase = true)) return
+        if (code in 300..399) return
+        if (body != null) {
+            if (body.contains("<title>Log in", ignoreCase = true) ||
+                body.contains("<title>Login", ignoreCase = true)
+            ) return
+            if (body.contains("action=\"/login\"", ignoreCase = true) &&
+                !body.contains("nav-username", ignoreCase = true)
+            ) return
+        }
         val jar = _cookieJar ?: return
         val snapshot = jar.snapshotJson()
         if (snapshot.isBlank()) return
@@ -130,11 +153,24 @@ object OnAirNetwork {
     }
 
     fun refreshCookieJar() {
+        val raw = OnAirCookieManager.cookiesRaw
+        val parsed = OnAirCookieManager.parseToCookies(raw, baseUrl)
+        if (parsed.isEmpty()) {
+            android.util.Log.w(
+                "OnAirNetwork",
+                "refreshCookieJar: parse yielded 0 cookies — keeping existing jar",
+            )
+            return
+        }
         val jar = getOrCreateCookieJar()
         jar.clearCookies()
-        val raw = OnAirCookieManager.cookiesRaw
-        jar.seed(OnAirCookieManager.parseToCookies(raw, baseUrl))
+        jar.seed(parsed)
         lastSavedCookieSnapshot = raw
+        android.util.Log.d(
+            "OnAirNetwork",
+            "refreshCookieJar: seeded ${parsed.size} cookies names=" +
+                    parsed.map { "${it.name}@${it.path}" },
+        )
     }
 
     fun snapshotCookies(): String {
@@ -164,8 +200,11 @@ object OnAirNetwork {
         _cookieJar?.let {
             it.clearCookies()
             val raw = OnAirCookieManager.cookiesRaw
-            it.seed(OnAirCookieManager.parseToCookies(raw, baseUrl))
-            lastSavedCookieSnapshot = raw
+            val parsed = OnAirCookieManager.parseToCookies(raw, baseUrl)
+            if (parsed.isNotEmpty()) {
+                it.seed(parsed)
+                lastSavedCookieSnapshot = raw
+            }
         }
     }
 }

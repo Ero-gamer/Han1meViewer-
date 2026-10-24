@@ -44,7 +44,7 @@ object OnAirAuthProbe {
             )
         }
         try {
-            val url = baseUrl.trimEnd('/') + "/"
+            val url = baseUrl.trimEnd('/') + "/settings"
             val request = Request.Builder()
                 .url(url)
                 .header("Accept", "text/html")
@@ -52,7 +52,7 @@ object OnAirAuthProbe {
             OnAirNetwork.sharedOkHttpClient.newCall(request).execute().use { resp ->
                 val code = resp.code
                 val body = resp.body?.string().orEmpty()
-                Log.d(TAG, "probe: code=$code, htmlLen=${body.length}")
+                Log.d(TAG, "probe /settings: code=$code, htmlLen=${body.length}")
 
                 when {
                     code == 429 -> OnAirProbeResult(
@@ -80,7 +80,6 @@ object OnAirAuthProbe {
                         ok = false,
                         failure = OnAirProbeFailure.SessionExpired,
                         userMessage = "OnAir refused the request (HTTP 403). " +
-                                "This is often a mirror-side WAF or ad-pass block. " +
                                 "Try switching mirrors, or wait a moment and retry.",
                         httpCode = code,
                         suggestSwitchSite = true,
@@ -91,8 +90,7 @@ object OnAirAuthProbe {
                         ok = false,
                         failure = OnAirProbeFailure.ServerError,
                         userMessage = "OnAir returned a server error (HTTP $code). " +
-                                "This is usually maintenance or overload. Wait a bit, " +
-                                "or switch to a different mirror.",
+                                "Wait a bit or switch mirrors.",
                         httpCode = code,
                         suggestSwitchSite = true,
                         suggestWait = true,
@@ -101,9 +99,7 @@ object OnAirAuthProbe {
                     code == 404 -> OnAirProbeResult(
                         ok = false,
                         failure = OnAirProbeFailure.SiteDown,
-                        userMessage = "This mirror returned 404. The service may be " +
-                                "down or this address has been retired. Switch to a " +
-                                "different mirror.",
+                        userMessage = "This mirror returned 404. Switch mirrors.",
                         httpCode = code,
                         suggestSwitchSite = true,
                     )
@@ -111,22 +107,26 @@ object OnAirAuthProbe {
                     !resp.isSuccessful -> OnAirProbeResult(
                         ok = false,
                         failure = OnAirProbeFailure.Unknown,
-                        userMessage = "Unexpected response (HTTP $code). " +
-                                "Try switching mirrors or retry later.",
+                        userMessage = "Unexpected response (HTTP $code). Try again.",
                         httpCode = code,
                         suggestSwitchSite = true,
                     )
 
                     else -> {
                         val looksLikeLogin =
-                            body.contains("action=\"/login\"", ignoreCase = true) &&
-                                    !body.contains("user-modal-name", ignoreCase = true)
-                        if (looksLikeLogin) {
+                            body.contains("action=\"/login\"", ignoreCase = true) ||
+                                    body.contains("<title>Log in", ignoreCase = true) ||
+                                    body.contains("<title>Login", ignoreCase = true)
+                        val hasAuthMarker =
+                            body.contains("nav-username", ignoreCase = true) ||
+                                    body.contains("action=\"/logout\"", ignoreCase = true)
+                        if (!hasAuthMarker || (looksLikeLogin && !hasAuthMarker)) {
                             OnAirCookieManager.clearCookies()
                             OnAirProbeResult(
                                 ok = false,
                                 failure = OnAirProbeFailure.SessionExpired,
-                                userMessage = "Your session expired. Please sign in again.",
+                                userMessage = "Your cookies are not signed in on this mirror. " +
+                                        "Sign in again or paste fresh cookies.",
                                 httpCode = code,
                                 suggestRelogin = true,
                             )
@@ -141,8 +141,7 @@ object OnAirAuthProbe {
             OnAirProbeResult(
                 ok = false,
                 failure = OnAirProbeFailure.Network,
-                userMessage = "The request to OnAir timed out. Tor might be slow, " +
-                        "or the server is under load. Wait a moment and try again.",
+                userMessage = "The request timed out. Tor might be slow.",
                 suggestWait = true,
             )
         } catch (e: UnknownHostException) {
@@ -150,8 +149,7 @@ object OnAirAuthProbe {
             OnAirProbeResult(
                 ok = false,
                 failure = OnAirProbeFailure.Network,
-                userMessage = "Cannot resolve the .onion address. Confirm Tor is " +
-                        "running, or switch to another mirror.",
+                userMessage = "Cannot resolve the .onion address. Confirm Tor is running.",
                 suggestSwitchSite = true,
             )
         } catch (e: Exception) {
@@ -160,8 +158,7 @@ object OnAirAuthProbe {
                 ok = false,
                 failure = OnAirProbeFailure.Unknown,
                 userMessage = "Could not reach OnAir: " +
-                        (e.message ?: e.javaClass.simpleName) +
-                        ". Try again or switch mirrors.",
+                        (e.message ?: e.javaClass.simpleName),
                 suggestSwitchSite = true,
             )
         }

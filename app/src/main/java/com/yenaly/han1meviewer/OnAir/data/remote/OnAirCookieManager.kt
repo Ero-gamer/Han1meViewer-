@@ -48,13 +48,14 @@ object OnAirCookieManager {
         Preferences.preferenceSp.edit(commit = true) {
             putString(PREF_ONAIR_COOKIES, raw)
         }
-        OnAirNetwork.refreshCookieJar()
         _cookiesFlow.value = raw
+        OnAirNetwork.refreshCookieJar()
         val parsed = parseToCookies(raw, OnAirNetwork.baseUrl)
         Log.d(
             TAG,
             "saveCookies: ${raw.length} chars, parsed=${parsed.size} " +
-                    "names=${parsed.map { "${it.name}@${it.path}" }}",
+                    "names=${parsed.map { "${it.name}@${it.path}" }} " +
+                    "jarNames=${OnAirNetwork.snapshotCookies().length}",
         )
     }
 
@@ -64,6 +65,20 @@ object OnAirCookieManager {
         }
         _cookiesFlow.value = raw
         Log.d(TAG, "persistOnly: ${raw.length} chars")
+    }
+
+    fun replaceWithJarSnapshot() {
+        val snapshot = OnAirNetwork.snapshotCookies()
+        if (snapshot.isBlank()) {
+            Log.w(TAG, "replaceWithJarSnapshot: jar is empty, skipping")
+            return
+        }
+        persistOnly(snapshot)
+        Log.d(
+            TAG,
+            "replaceWithJarSnapshot: wrote ${snapshot.length} chars " +
+                    "names=${parseToCookies(snapshot, OnAirNetwork.baseUrl).map { it.name }}",
+        )
     }
 
     fun clearCookies() {
@@ -162,6 +177,9 @@ object OnAirCookieManager {
                         }
                         .build()
                 }.onSuccess { result.add(it) }
+                    .onFailure {
+                        Log.w(TAG, "parseJsonCookies skip $name: ${it.message}")
+                    }
             }
         } catch (e: Exception) {
             Log.w(TAG, "parseJsonCookies failed: ${e.message}")
@@ -204,6 +222,7 @@ object OnAirCookieManager {
                 }
                 .build()
         }.onSuccess { out.add(it) }
+            .onFailure { Log.w(TAG, "processNetscapeLine skip $name: ${it.message}") }
     }
 
     private fun parseRawCookieString(raw: String, host: String): List<Cookie> {
@@ -223,6 +242,7 @@ object OnAirCookieManager {
                     .value(value)
                     .build()
             }.onSuccess { result.add(it) }
+                .onFailure { Log.w(TAG, "parseRawCookieString skip $name: ${it.message}") }
         }
         return result
     }
