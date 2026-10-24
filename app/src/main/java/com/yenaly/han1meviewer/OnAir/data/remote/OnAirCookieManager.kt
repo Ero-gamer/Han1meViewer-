@@ -24,6 +24,11 @@ object OnAirCookieManager {
 
     private val requiredCookieNames = setOf("session", "laravel_session")
 
+    private val junkCookieNames = setOf(
+        "path", "domain", "expires", "max-age",
+        "secure", "httponly", "samesite",
+    )
+
     private val _cookiesFlow = MutableStateFlow(readRaw())
     val cookiesFlow: StateFlow<String> = _cookiesFlow.asStateFlow()
 
@@ -45,7 +50,12 @@ object OnAirCookieManager {
         }
         OnAirNetwork.refreshCookieJar()
         _cookiesFlow.value = raw
-        Log.d(TAG, "saveCookies: ${raw.length} chars")
+        val parsed = parseToCookies(raw, OnAirNetwork.baseUrl)
+        Log.d(
+            TAG,
+            "saveCookies: ${raw.length} chars, parsed=${parsed.size} " +
+                    "names=${parsed.map { "${it.name}@${it.path}" }}",
+        )
     }
 
     fun persistOnly(raw: String) {
@@ -129,12 +139,12 @@ object OnAirCookieManager {
 
                 val expiry = when {
                     obj.has("expiresAt") -> {
-                        val raw = obj.optLong("expiresAt", 0L)
-                        if (raw <= 0L) Long.MAX_VALUE else raw
+                        val v = obj.optLong("expiresAt", 0L)
+                        if (v <= 0L) Long.MAX_VALUE else v
                     }
                     obj.has("expirationDate") -> {
-                        val raw = obj.optLong("expirationDate", 0L)
-                        if (raw <= 0L) Long.MAX_VALUE else raw * 1000L
+                        val v = obj.optLong("expirationDate", 0L)
+                        if (v <= 0L) Long.MAX_VALUE else v * 1000L
                     }
                     else -> Long.MAX_VALUE
                 }
@@ -204,14 +214,7 @@ object OnAirCookieManager {
             val name = trimmed.substringBefore('=').trim()
             val value = trimmed.substringAfter('=', "").trim()
             if (name.isBlank()) return@forEach
-            if (name.equals("Path", ignoreCase = true) ||
-                name.equals("Domain", ignoreCase = true) ||
-                name.equals("Expires", ignoreCase = true) ||
-                name.equals("Max-Age", ignoreCase = true) ||
-                name.equals("Secure", ignoreCase = true) ||
-                name.equals("HttpOnly", ignoreCase = true) ||
-                name.equals("SameSite", ignoreCase = true)
-            ) return@forEach
+            if (name.lowercase() in junkCookieNames) return@forEach
             runCatching {
                 Cookie.Builder()
                     .domain(host)

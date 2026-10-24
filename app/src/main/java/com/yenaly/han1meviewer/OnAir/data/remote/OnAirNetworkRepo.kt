@@ -305,49 +305,66 @@ object OnAirNetworkRepo {
         try {
             val watchUrl = OnAirNetwork.baseUrl.trimEnd('/') + "/watch/" + videoId
             val result = retryWithBackoff {
-                val response = OnAirNetwork.service.getWatchPage(
-                    videoId = videoId,
-                    quality = quality?.takeIf { it.isNotBlank() },
-                )
-                if (response.code() == 404) {
-                    return@retryWithBackoff VideoLoadingState.NoContent
-                }
-                val html = response.toHtmlOrThrow()
-
-                if (OnAirListingParser.isLoginRequiredPage(html)) {
-                    return@retryWithBackoff VideoLoadingState.Error(
-                        IllegalStateException(
-                            "Session expired on this mirror. Sign in again from Settings, " +
-                                    "or switch to a different mirror.",
-                        ),
+                val firstDetail = runCatching {
+                    val response = OnAirNetwork.service.getWatchPage(
+                        videoId = videoId,
+                        quality = quality?.takeIf { it.isNotBlank() },
                     )
-                }
-                if (html.contains("Too Many Requests", ignoreCase = true) ||
-                    html.contains("rate limit", ignoreCase = true)
-                ) {
-                    return@retryWithBackoff VideoLoadingState.Error(
-                        IllegalStateException(
-                            "OnAir is rate-limiting this mirror. Try again in a minute.",
-                        ),
-                    )
-                }
-
-                val detail = OnAirWatchParser.parseWatchPage(html, watchUrl)
-                if (detail == null) {
-                    VideoLoadingState.Error(
-                        IllegalStateException(
-                            "This mirror returned a page without the watch layout. " +
-                                    "Try switching mirror from Cookies settings.",
-                        ),
-                    )
-                } else {
-                    val normalized = if (detail.videoId.isBlank()) {
-                        detail.copy(videoId = videoId)
-                    } else {
-                        detail
+                    if (response.code() == 404) return@runCatching null
+                    val html = response.toHtmlOrThrow()
+                    if (OnAirListingParser.isLoginRequiredPage(html)) {
+                        Log.w(TAG, "watch page shows login form (attempt 1)")
+                        return@runCatching null
                     }
-                    VideoLoadingState.Success(normalized)
+                    OnAirWatchParser.parseWatchPage(html, watchUrl)
+                }.getOrNull()
+
+                val detail = firstDetail ?: run {
+                    Log.w(
+                        TAG,
+                        "watch parse failed, retrying once with refreshed cookies. " +
+                                "jarChars=${OnAirCookieManager.cookiesRaw.length}, " +
+                                "adPass=${OnAirCookieManager.hasAdPass}",
+                    )
+                    val retryResponse = OnAirNetwork.service.getWatchPage(
+                        videoId = videoId,
+                        quality = quality?.takeIf { it.isNotBlank() },
+                    )
+                    if (retryResponse.code() == 404) {
+                        return@retryWithBackoff VideoLoadingState.NoContent
+                    }
+                    val retryHtml = retryResponse.toHtmlOrThrow()
+                    if (OnAirListingParser.isLoginRequiredPage(retryHtml)) {
+                        return@retryWithBackoff VideoLoadingState.Error(
+                            IllegalStateException(
+                                "Session expired on this mirror. Sign in again from Settings, " +
+                                        "or switch to a different mirror.",
+                            ),
+                        )
+                    }
+                    val retryDetail = OnAirWatchParser.parseWatchPage(retryHtml, watchUrl)
+                    if (retryDetail == null) {
+                        Log.w(
+                            TAG,
+                            "watch parse failed twice; first 500 chars: " +
+                                    retryHtml.take(500).replace('\n', ' '),
+                        )
+                        return@retryWithBackoff VideoLoadingState.Error(
+                            IllegalStateException(
+                                "This mirror returned a page without the watch layout twice. " +
+                                        "Switch mirror from Cookies settings.",
+                            ),
+                        )
+                    }
+                    retryDetail
                 }
+
+                val normalized = if (detail.videoId.isBlank()) {
+                    detail.copy(videoId = videoId)
+                } else {
+                    detail
+                }
+                VideoLoadingState.Success(normalized)
             }
             emit(result)
         } catch (e: Exception) {

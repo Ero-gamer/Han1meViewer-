@@ -29,9 +29,11 @@ class OnAirCookieJar : CookieJar {
         val requestPath = url.encodedPath.ifBlank { "/" }
         val applicable = bucket.values.filter { c ->
             val cookiePath = c.path.ifBlank { "/" }
-            cookiePath == "/" || requestPath == cookiePath || requestPath.startsWith(
-                if (cookiePath.endsWith("/")) cookiePath else "$cookiePath/"
-            )
+            cookiePath == "/" ||
+                    requestPath == cookiePath ||
+                    requestPath.startsWith(
+                        if (cookiePath.endsWith("/")) cookiePath else "$cookiePath/"
+                    )
         }
         Log.d(
             TAG,
