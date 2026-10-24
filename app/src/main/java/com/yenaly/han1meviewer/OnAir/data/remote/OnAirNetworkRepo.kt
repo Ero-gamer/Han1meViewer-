@@ -313,12 +313,32 @@ object OnAirNetworkRepo {
                     return@retryWithBackoff VideoLoadingState.NoContent
                 }
                 val html = response.toHtmlOrThrow()
+
+                if (OnAirListingParser.isLoginRequiredPage(html)) {
+                    return@retryWithBackoff VideoLoadingState.Error(
+                        IllegalStateException(
+                            "Session expired on this mirror. Sign in again from Settings, " +
+                                    "or switch to a different mirror.",
+                        ),
+                    )
+                }
+                if (html.contains("Too Many Requests", ignoreCase = true) ||
+                    html.contains("rate limit", ignoreCase = true)
+                ) {
+                    return@retryWithBackoff VideoLoadingState.Error(
+                        IllegalStateException(
+                            "OnAir is rate-limiting this mirror. Try again in a minute.",
+                        ),
+                    )
+                }
+
                 val detail = OnAirWatchParser.parseWatchPage(html, watchUrl)
                 if (detail == null) {
                     VideoLoadingState.Error(
                         IllegalStateException(
-                            "Could not parse the watch page. Try a different mirror."
-                        )
+                            "This mirror returned a page without the watch layout. " +
+                                    "Try switching mirror from Cookies settings.",
+                        ),
                     )
                 } else {
                     val normalized = if (detail.videoId.isBlank()) {

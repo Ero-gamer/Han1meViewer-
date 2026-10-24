@@ -146,249 +146,240 @@ fun OnAirNavHost(
         )
     }
 
-    val recoverableError: (String) -> Unit = { _ ->
-        retryTick = System.currentTimeMillis()
-    }
+    // Child-screen failures must NOT re-run the gate.
+    val recoverableError: (String) -> Unit = { _ -> }
 
-    when (val state = gateState) {
-        OnAirGateState.Passed -> {
-            val homeViewModel: OnAirHomeViewModel = viewModel()
+    if (gateState is OnAirGateState.Passed) {
+        val homeViewModel: OnAirHomeViewModel = viewModel()
 
-            LaunchedEffect(Unit) {
-                if (OnAirProfileCache.getCurrentUsername() != null &&
-                    OnAirProfileCache.current() == null
-                ) {
-                    homeViewModel.refreshCurrentUser()
-                }
-            }
-
-            NavHost(
-                navController = navController,
-                startDestination = OnAirHomeRoute,
+        LaunchedEffect(Unit) {
+            if (OnAirProfileCache.getCurrentUsername() != null &&
+                OnAirProfileCache.current() == null
             ) {
-                composable<OnAirHomeRoute> {
-                    OnAirHomeScreen(
-                        onOpenVideo = { id -> navController.navigateSafely(OnAirVideoRoute(id)) },
-                        onOpenSearch = { q -> navController.navigateSafely(OnAirSearchRoute(query = q)) },
-                        onOpenTag = { t -> navController.navigateSafely(OnAirTagRoute(t)) },
-                        onOpenTags = { navController.navigateSafely(OnAirTagsIndexRoute) },
-                        onOpenPictures = { navController.navigateSafely(OnAirPicturesRoute) },
-                        onOpenUser = { u -> navController.navigateSafely(OnAirUserRoute(u)) },
-                        onOpenHistory = { navController.navigateSafely(OnAirHistoryRoute) },
-                        onOpenAnnouncement = { navController.navigateSafely(OnAirAnnouncementsRoute) },
-                        onOpenSettings = { navController.navigateSafely(OnAirSettingsRoute) },
-                        onSwitchSite = { activity.requestSiteSwitch() },
-                        onLoadFailure = recoverableError,
-                        viewModel = homeViewModel,
-                    )
-                }
-
-                composable<OnAirSearchRoute> { entry ->
-                    val route = entry.toRoute<OnAirSearchRoute>()
-                    val vm: OnAirSearchViewModel = viewModel()
-                    LaunchedEffect(route) {
-                        if (!route.query.isNullOrBlank()) vm.setQuery(route.query)
-                        if (!route.field.isNullOrBlank()) vm.setField(route.field)
-                        if (!route.length.isNullOrBlank()) vm.setLength(route.length)
-                        if (!route.date.isNullOrBlank()) vm.setDate(route.date)
-                        if (!route.sort.isNullOrBlank()) vm.setSort(route.sort)
-                        vm.setTagFilter(route.tag)
-                    }
-                    OnAirSearchScreen(
-                        viewModel = vm,
-                        onBack = { navController.popBackStack() },
-                        onOpenVideo = { id -> navController.navigateSafely(OnAirVideoRoute(id)) },
-                        onOpenTag = { t -> navController.navigateSafely(OnAirTagRoute(t)) },
-                        onOpenUser = { u -> navController.navigateSafely(OnAirUserRoute(u)) },
-                        onLoadFailure = recoverableError,
-                    )
-                }
-
-                composable<OnAirTagRoute> { entry ->
-                    val route = entry.toRoute<OnAirTagRoute>()
-                    OnAirTagScreen(
-                        tagName = route.tagName,
-                        onBack = { navController.popBackStack() },
-                        onOpenVideo = { id -> navController.navigateSafely(OnAirVideoRoute(id)) },
-                        onLoadFailure = recoverableError,
-                    )
-                }
-
-                composable<OnAirTagsIndexRoute> {
-                    OnAirTagsIndexScreen(
-                        onBack = { navController.popBackStack() },
-                        onOpenTag = { t -> navController.navigateSafely(OnAirTagRoute(t)) },
-                        onLoadFailure = recoverableError,
-                    )
-                }
-
-                composable<OnAirPicturesRoute> {
-                    OnAirPicturesScreen(
-                        onBack = { navController.popBackStack() },
-                        onOpenUser = { u -> navController.navigateSafely(OnAirUserRoute(u)) },
-                        onLoadFailure = recoverableError,
-                    )
-                }
-
-                composable<OnAirUserRoute> { entry ->
-                    val route = entry.toRoute<OnAirUserRoute>()
-                    OnAirUserScreen(
-                        username = route.username,
-                        onBack = { navController.popBackStack() },
-                        onOpenVideo = { id -> navController.navigateSafely(OnAirVideoRoute(id)) },
-                        onLoadFailure = recoverableError,
-                    )
-                }
-
-                composable<OnAirHistoryRoute> {
-                    OnAirHistoryScreen(
-                        onBack = { navController.popBackStack() },
-                        onOpenVideo = { id, _ -> navController.navigateSafely(OnAirVideoRoute(id)) },
-                    )
-                }
-
-                composable<OnAirAnnouncementsRoute> {
-                    OnAirAnnouncementsScreen(onBack = { navController.popBackStack() })
-                }
-
-                composable<OnAirChatRoute> {
-                    OnAirChatScreen(
-                        onBack = { navController.popBackStack() },
-                        onOpenUser = { u -> navController.navigateSafely(OnAirUserRoute(u)) },
-                    )
-                }
-
-                composable<OnAirSettingsRoute> {
-                    OnAirSettingsScreen(
-                        onBack = { navController.popBackStack() },
-                        onOpenCookies = { navController.navigateSafely(OnAirCookieRoute) },
-                        onOpenLogin = { navController.navigateSafely(OnAirLoginRoute) },
-                        onOpenAnnouncements = { navController.navigateSafely(OnAirAnnouncementsRoute) },
-                        onOpenChat = { navController.navigateSafely(OnAirChatRoute) },
-                        onOpenTags = { navController.navigateSafely(OnAirTagsIndexRoute) },
-                        onLoggedOut = {
-                            OnAirProfileCache.invalidate()
-                            gateState = OnAirGateState.ContentError(
-                                reason = "You signed out of OnAir.",
-                                suggestRelogin = true,
-                            )
-                            navController.popBackStack(OnAirHomeRoute, inclusive = true)
-                        },
-                        onOpenProfile = { username ->
-                            navController.navigateSafely(OnAirUserRoute(username))
-                        },
-                    )
-                }
-
-                composable<OnAirCookieRoute> {
-                    OnAirCookieSettingsScreen(
-                        onBack = { navController.popBackStack() },
-                        onOpenLogin = { navController.navigateSafely(OnAirLoginRoute) },
-                        onOpenRegister = { navController.navigateSafely(OnAirRegisterRoute) },
-                        onSwitchSite = { activity.requestSiteSwitch() },
-                        onCookiesSaved = { retryTick = System.currentTimeMillis() },
-                        onLoggedOut = { retryTick = System.currentTimeMillis() },
-                    )
-                }
-
-                composable<OnAirLoginRoute> {
-                    OnAirLoginScreen(
-                        onBack = { navController.popBackStack() },
-                        onOpenRegister = { navController.navigateSafely(OnAirRegisterRoute) },
-                        onSuccess = {
-                            OnAirProfileCache.invalidate()
-                            retryTick = System.currentTimeMillis()
-                            navController.popBackStack(OnAirHomeRoute, inclusive = false)
-                        },
-                    )
-                }
-
-                composable<OnAirRegisterRoute> {
-                    OnAirRegisterScreen(
-                        onBack = { navController.popBackStack() },
-                        onOpenLogin = { navController.navigateSafely(OnAirLoginRoute) },
-                        onSuccess = {
-                            OnAirProfileCache.invalidate()
-                            retryTick = System.currentTimeMillis()
-                            navController.popBackStack(OnAirHomeRoute, inclusive = false)
-                        },
-                    )
-                }
-
-                composable<OnAirVideoRoute> { entry ->
-                    val route = entry.toRoute<OnAirVideoRoute>()
-                    val vm: OnAirVideoViewModel = viewModel()
-                    OnAirVideoScreen(
-                        videoId = route.videoId,
-                        preferredQuality = route.preferredQuality,
-                        viewModel = vm,
-                        onBack = { navController.popBackStack() },
-                        onOpenVideo = { id ->
-                            if (id != route.videoId) {
-                                navController.navigateSafely(OnAirVideoRoute(id))
-                            }
-                        },
-                        onOpenUser = { u -> navController.navigateSafely(OnAirUserRoute(u)) },
-                        onOpenTag = { t -> navController.navigateSafely(OnAirTagRoute(t)) },
-                        onLoadFailure = recoverableError,
-                    )
-                }
+                homeViewModel.refreshCurrentUser()
             }
         }
 
-        OnAirGateState.Initializing,
-        OnAirGateState.CheckingTor,
-        OnAirGateState.Probing,
-        is OnAirGateState.TorBlocked,
-        is OnAirGateState.ContentError -> {
-            val activeState = state
-            NavHost(
-                navController = navController,
-                startDestination = OnAirGateRoute,
-            ) {
-                composable<OnAirGateRoute> {
-                    OnAirGateScreen(
-                        state = activeState,
-                        onSwitchSite = { activity.requestSiteSwitch() },
-                        onOpenCookies = {
-                            navController.navigate(OnAirCookieRoute) { launchSingleTop = true }
-                        },
-                        onRetry = { retryTick = System.currentTimeMillis() },
-                    )
+        NavHost(
+            navController = navController,
+            startDestination = OnAirHomeRoute,
+        ) {
+            composable<OnAirHomeRoute> {
+                OnAirHomeScreen(
+                    onOpenVideo = { id -> navController.navigateSafely(OnAirVideoRoute(id)) },
+                    onOpenSearch = { q -> navController.navigateSafely(OnAirSearchRoute(query = q)) },
+                    onOpenTag = { t -> navController.navigateSafely(OnAirTagRoute(t)) },
+                    onOpenTags = { navController.navigateSafely(OnAirTagsIndexRoute) },
+                    onOpenPictures = { navController.navigateSafely(OnAirPicturesRoute) },
+                    onOpenUser = { u -> navController.navigateSafely(OnAirUserRoute(u)) },
+                    onOpenHistory = { navController.navigateSafely(OnAirHistoryRoute) },
+                    onOpenAnnouncement = { navController.navigateSafely(OnAirAnnouncementsRoute) },
+                    onOpenSettings = { navController.navigateSafely(OnAirSettingsRoute) },
+                    onSwitchSite = { activity.requestSiteSwitch() },
+                    onLoadFailure = recoverableError,
+                    viewModel = homeViewModel,
+                )
+            }
+
+            composable<OnAirSearchRoute> { entry ->
+                val route = entry.toRoute<OnAirSearchRoute>()
+                val vm: OnAirSearchViewModel = viewModel()
+                LaunchedEffect(route) {
+                    if (!route.query.isNullOrBlank()) vm.setQuery(route.query)
+                    if (!route.field.isNullOrBlank()) vm.setField(route.field)
+                    if (!route.length.isNullOrBlank()) vm.setLength(route.length)
+                    if (!route.date.isNullOrBlank()) vm.setDate(route.date)
+                    if (!route.sort.isNullOrBlank()) vm.setSort(route.sort)
+                    vm.setTagFilter(route.tag)
                 }
-                composable<OnAirCookieRoute> {
-                    OnAirCookieSettingsScreen(
-                        onBack = { navController.popBackStack() },
-                        onOpenLogin = {
-                            navController.navigate(OnAirLoginRoute) { launchSingleTop = true }
-                        },
-                        onOpenRegister = {
-                            navController.navigate(OnAirRegisterRoute) { launchSingleTop = true }
-                        },
-                        onSwitchSite = { activity.requestSiteSwitch() },
-                        onCookiesSaved = { retryTick = System.currentTimeMillis() },
-                        onLoggedOut = { retryTick = System.currentTimeMillis() },
-                        gateState = activeState,
-                    )
-                }
-                composable<OnAirLoginRoute> {
-                    OnAirLoginScreen(
-                        onBack = { navController.popBackStack() },
-                        onOpenRegister = {
-                            navController.navigate(OnAirRegisterRoute) { launchSingleTop = true }
-                        },
-                        onSuccess = { retryTick = System.currentTimeMillis() },
-                    )
-                }
-                composable<OnAirRegisterRoute> {
-                    OnAirRegisterScreen(
-                        onBack = { navController.popBackStack() },
-                        onOpenLogin = {
-                            navController.navigate(OnAirLoginRoute) { launchSingleTop = true }
-                        },
-                        onSuccess = { retryTick = System.currentTimeMillis() },
-                    )
-                }
+                OnAirSearchScreen(
+                    viewModel = vm,
+                    onBack = { navController.popBackStack() },
+                    onOpenVideo = { id -> navController.navigateSafely(OnAirVideoRoute(id)) },
+                    onOpenTag = { t -> navController.navigateSafely(OnAirTagRoute(t)) },
+                    onOpenUser = { u -> navController.navigateSafely(OnAirUserRoute(u)) },
+                    onLoadFailure = recoverableError,
+                )
+            }
+
+            composable<OnAirTagRoute> { entry ->
+                val route = entry.toRoute<OnAirTagRoute>()
+                OnAirTagScreen(
+                    tagName = route.tagName,
+                    onBack = { navController.popBackStack() },
+                    onOpenVideo = { id -> navController.navigateSafely(OnAirVideoRoute(id)) },
+                    onLoadFailure = recoverableError,
+                )
+            }
+
+            composable<OnAirTagsIndexRoute> {
+                OnAirTagsIndexScreen(
+                    onBack = { navController.popBackStack() },
+                    onOpenTag = { t -> navController.navigateSafely(OnAirTagRoute(t)) },
+                    onLoadFailure = recoverableError,
+                )
+            }
+
+            composable<OnAirPicturesRoute> {
+                OnAirPicturesScreen(
+                    onBack = { navController.popBackStack() },
+                    onOpenUser = { u -> navController.navigateSafely(OnAirUserRoute(u)) },
+                    onLoadFailure = recoverableError,
+                )
+            }
+
+            composable<OnAirUserRoute> { entry ->
+                val route = entry.toRoute<OnAirUserRoute>()
+                OnAirUserScreen(
+                    username = route.username,
+                    onBack = { navController.popBackStack() },
+                    onOpenVideo = { id -> navController.navigateSafely(OnAirVideoRoute(id)) },
+                    onLoadFailure = recoverableError,
+                )
+            }
+
+            composable<OnAirHistoryRoute> {
+                OnAirHistoryScreen(
+                    onBack = { navController.popBackStack() },
+                    onOpenVideo = { id, _ -> navController.navigateSafely(OnAirVideoRoute(id)) },
+                )
+            }
+
+            composable<OnAirAnnouncementsRoute> {
+                OnAirAnnouncementsScreen(onBack = { navController.popBackStack() })
+            }
+
+            composable<OnAirChatRoute> {
+                OnAirChatScreen(
+                    onBack = { navController.popBackStack() },
+                    onOpenUser = { u -> navController.navigateSafely(OnAirUserRoute(u)) },
+                )
+            }
+
+            composable<OnAirSettingsRoute> {
+                OnAirSettingsScreen(
+                    onBack = { navController.popBackStack() },
+                    onOpenCookies = { navController.navigateSafely(OnAirCookieRoute) },
+                    onOpenLogin = { navController.navigateSafely(OnAirLoginRoute) },
+                    onOpenAnnouncements = { navController.navigateSafely(OnAirAnnouncementsRoute) },
+                    onOpenChat = { navController.navigateSafely(OnAirChatRoute) },
+                    onOpenTags = { navController.navigateSafely(OnAirTagsIndexRoute) },
+                    onLoggedOut = {
+                        OnAirProfileCache.invalidate()
+                        gateState = OnAirGateState.ContentError(
+                            reason = "You signed out of OnAir.",
+                            suggestRelogin = true,
+                        )
+                        navController.popBackStack(OnAirHomeRoute, inclusive = true)
+                    },
+                    onOpenProfile = { username ->
+                        navController.navigateSafely(OnAirUserRoute(username))
+                    },
+                )
+            }
+
+            composable<OnAirCookieRoute> {
+                OnAirCookieSettingsScreen(
+                    onBack = { navController.popBackStack() },
+                    onOpenLogin = { navController.navigateSafely(OnAirLoginRoute) },
+                    onOpenRegister = { navController.navigateSafely(OnAirRegisterRoute) },
+                    onSwitchSite = { activity.requestSiteSwitch() },
+                    onCookiesSaved = { retryTick = System.currentTimeMillis() },
+                    onLoggedOut = { retryTick = System.currentTimeMillis() },
+                )
+            }
+
+            composable<OnAirLoginRoute> {
+                OnAirLoginScreen(
+                    onBack = { navController.popBackStack() },
+                    onOpenRegister = { navController.navigateSafely(OnAirRegisterRoute) },
+                    onSuccess = {
+                        OnAirProfileCache.invalidate()
+                        retryTick = System.currentTimeMillis()
+                        navController.popBackStack(OnAirHomeRoute, inclusive = false)
+                    },
+                )
+            }
+
+            composable<OnAirRegisterRoute> {
+                OnAirRegisterScreen(
+                    onBack = { navController.popBackStack() },
+                    onOpenLogin = { navController.navigateSafely(OnAirLoginRoute) },
+                    onSuccess = {
+                        OnAirProfileCache.invalidate()
+                        retryTick = System.currentTimeMillis()
+                        navController.popBackStack(OnAirHomeRoute, inclusive = false)
+                    },
+                )
+            }
+
+            composable<OnAirVideoRoute> { entry ->
+                val route = entry.toRoute<OnAirVideoRoute>()
+                val vm: OnAirVideoViewModel = viewModel()
+                OnAirVideoScreen(
+                    videoId = route.videoId,
+                    preferredQuality = route.preferredQuality,
+                    viewModel = vm,
+                    onBack = { navController.popBackStack() },
+                    onOpenVideo = { id ->
+                        if (id != route.videoId) {
+                            navController.navigateSafely(OnAirVideoRoute(id))
+                        }
+                    },
+                    onOpenUser = { u -> navController.navigateSafely(OnAirUserRoute(u)) },
+                    onOpenTag = { t -> navController.navigateSafely(OnAirTagRoute(t)) },
+                    onLoadFailure = recoverableError,
+                )
+            }
+        }
+    } else {
+        val activeState = gateState
+        NavHost(
+            navController = navController,
+            startDestination = OnAirGateRoute,
+        ) {
+            composable<OnAirGateRoute> {
+                OnAirGateScreen(
+                    state = activeState,
+                    onSwitchSite = { activity.requestSiteSwitch() },
+                    onOpenCookies = {
+                        navController.navigate(OnAirCookieRoute) { launchSingleTop = true }
+                    },
+                    onRetry = { retryTick = System.currentTimeMillis() },
+                )
+            }
+            composable<OnAirCookieRoute> {
+                OnAirCookieSettingsScreen(
+                    onBack = { navController.popBackStack() },
+                    onOpenLogin = {
+                        navController.navigate(OnAirLoginRoute) { launchSingleTop = true }
+                    },
+                    onOpenRegister = {
+                        navController.navigate(OnAirRegisterRoute) { launchSingleTop = true }
+                    },
+                    onSwitchSite = { activity.requestSiteSwitch() },
+                    onCookiesSaved = { retryTick = System.currentTimeMillis() },
+                    onLoggedOut = { retryTick = System.currentTimeMillis() },
+                    gateState = activeState,
+                )
+            }
+            composable<OnAirLoginRoute> {
+                OnAirLoginScreen(
+                    onBack = { navController.popBackStack() },
+                    onOpenRegister = {
+                        navController.navigate(OnAirRegisterRoute) { launchSingleTop = true }
+                    },
+                    onSuccess = { retryTick = System.currentTimeMillis() },
+                )
+            }
+            composable<OnAirRegisterRoute> {
+                OnAirRegisterScreen(
+                    onBack = { navController.popBackStack() },
+                    onOpenLogin = {
+                        navController.navigate(OnAirLoginRoute) { launchSingleTop = true }
+                    },
+                    onSuccess = { retryTick = System.currentTimeMillis() },
+                )
             }
         }
     }

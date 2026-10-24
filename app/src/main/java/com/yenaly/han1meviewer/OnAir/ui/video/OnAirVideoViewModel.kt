@@ -8,6 +8,7 @@ import com.yenaly.han1meviewer.OnAir.data.local.OnAirHistoryRepo
 import com.yenaly.han1meviewer.OnAir.data.model.OnAirVideoDetail
 import com.yenaly.han1meviewer.OnAir.data.model.StreamResult
 import com.yenaly.han1meviewer.OnAir.data.remote.OnAirNetworkRepo
+import com.yenaly.han1meviewer.OnAir.data.remote.OnAirStreamFetcher
 import com.yenaly.han1meviewer.logic.state.VideoLoadingState
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
@@ -321,13 +322,13 @@ class OnAirVideoViewModel(application: Application) : AndroidViewModel(applicati
 
             val result: StreamResult? = try {
                 withTimeoutOrNull(QUALITY_FETCH_TIMEOUT_MS) {
-                    OnAirNetworkRepo.fetchStreamUrlForQuality(detail.videoId, quality)
+                    OnAirStreamFetcher.fetch(detail.videoId, quality)
                 }
             } catch (e: CancellationException) {
                 _playerState.update { it.copy(pendingQuality = null) }
                 throw e
             } catch (e: Exception) {
-                Log.e(TAG, "fetchStreamUrlForQuality failed", e)
+                Log.e(TAG, "OnAirStreamFetcher failed for $quality", e)
                 null
             }
 
@@ -385,13 +386,13 @@ class OnAirVideoViewModel(application: Application) : AndroidViewModel(applicati
         }
         val result: StreamResult? = try {
             withTimeoutOrNull(QUALITY_FETCH_TIMEOUT_MS) {
-                OnAirNetworkRepo.fetchStreamUrlForQuality(detail.videoId, quality)
+                OnAirStreamFetcher.fetch(detail.videoId, quality)
             }
         } catch (e: CancellationException) {
             _playerState.update { it.copy(pendingQuality = null) }
             throw e
         } catch (e: Exception) {
-            Log.e(TAG, "fetchQualityStream failed", e)
+            Log.e(TAG, "fetchQualityStream failed for $quality", e)
             null
         }
         if (result == null) {
