@@ -36,6 +36,9 @@ object OnAirCookieManager {
     val hasCookies: Boolean
         get() = _cookiesFlow.value.isNotBlank()
 
+    val hasAdPass: Boolean
+        get() = _cookiesFlow.value.contains("ad_pass=")
+
     fun saveCookies(raw: String) {
         Preferences.preferenceSp.edit(commit = true) {
             putString(PREF_ONAIR_COOKIES, raw)
@@ -201,6 +204,14 @@ object OnAirCookieManager {
             val name = trimmed.substringBefore('=').trim()
             val value = trimmed.substringAfter('=', "").trim()
             if (name.isBlank()) return@forEach
+            if (name.equals("Path", ignoreCase = true) ||
+                name.equals("Domain", ignoreCase = true) ||
+                name.equals("Expires", ignoreCase = true) ||
+                name.equals("Max-Age", ignoreCase = true) ||
+                name.equals("Secure", ignoreCase = true) ||
+                name.equals("HttpOnly", ignoreCase = true) ||
+                name.equals("SameSite", ignoreCase = true)
+            ) return@forEach
             runCatching {
                 Cookie.Builder()
                     .domain(host)

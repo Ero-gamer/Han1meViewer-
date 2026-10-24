@@ -12,7 +12,11 @@ class OnAirCookieJar : CookieJar {
 
     companion object {
         private const val TAG = "OnAirCookieJar"
-        private val cookieStore: MutableMap<String, MutableMap<String, Cookie>> = ConcurrentHashMap()
+
+        private val cookieStore:
+                MutableMap<String, MutableMap<String, Cookie>> = ConcurrentHashMap()
+
+        private fun key(c: Cookie): String = "${c.name}@${c.path.ifBlank { "/" }}"
     }
 
     override fun loadForRequest(url: HttpUrl): List<Cookie> {
@@ -22,9 +26,19 @@ class OnAirCookieJar : CookieJar {
         bucket.entries.removeAll { (_, c) ->
             c.expiresAt != Long.MAX_VALUE && c.expiresAt <= now
         }
-        val cookies = bucket.values.toMutableList()
-        Log.d(TAG, "loadForRequest: $host, cookies=${cookies.size}")
-        return cookies
+        val requestPath = url.encodedPath.ifBlank { "/" }
+        val applicable = bucket.values.filter { c ->
+            val cookiePath = c.path.ifBlank { "/" }
+            cookiePath == "/" || requestPath == cookiePath || requestPath.startsWith(
+                if (cookiePath.endsWith("/")) cookiePath else "$cookiePath/"
+            )
+        }
+        Log.d(
+            TAG,
+            "loadForRequest: $host path=$requestPath cookies=${applicable.size} " +
+                    "names=${applicable.map { "${it.name}@${it.path}" }}",
+        )
+        return applicable
     }
 
     override fun saveFromResponse(url: HttpUrl, cookies: List<Cookie>) {
@@ -32,15 +46,27 @@ class OnAirCookieJar : CookieJar {
         val host = url.host
         val now = System.currentTimeMillis()
         val bucket = cookieStore.getOrPut(host) { ConcurrentHashMap() }
-        cookies.filter { it.expiresAt == Long.MAX_VALUE || it.expiresAt > now }
-            .forEach { bucket[it.name] = it }
-        Log.d(TAG, "saveFromResponse: $host, merged=${cookies.size}, total=${bucket.size}")
+        cookies
+            .filter { it.expiresAt == Long.MAX_VALUE || it.expiresAt > now }
+            .forEach { c ->
+                val k = key(c)
+                bucket[k] = c
+                Log.d(
+                    TAG,
+                    "saveFromResponse: $host <- ${c.name}@${c.path} " +
+                            "value=${c.value.take(12)}…",
+                )
+            }
+        Log.d(TAG, "saveFromResponse: $host total=${bucket.size} keys=${bucket.keys}")
     }
 
     fun seed(cookies: List<Cookie>) {
         cookies.forEach { cookie ->
-            val bucket = cookieStore.getOrPut(cookie.domain) { ConcurrentHashMap() }
-            bucket[cookie.name] = cookie
+            val host = cookie.domain.ifBlank {
+                OnAirNetworkSafe.baseHost().orEmpty()
+            }
+            val bucket = cookieStore.getOrPut(host) { ConcurrentHashMap() }
+            bucket[key(cookie)] = cookie
         }
         Log.d(TAG, "seed: ${cookies.size} cookies")
     }
@@ -75,7 +101,19 @@ class OnAirCookieJar : CookieJar {
 
     fun currentCookieNames(): Set<String> {
         val names = mutableSetOf<String>()
-        cookieStore.values.forEach { bucket -> names.addAll(bucket.keys) }
+        cookieStore.values.forEach { bucket ->
+            bucket.values.forEach { names.add(it.name) }
+        }
         return names
+    }
+
+    private object OnAirNetworkSafe {
+        fun baseHost(): String? =
+            runCatching {
+                OnAirNetwork.baseUrl
+                    .substringAfter("://")
+                    .substringBefore("/")
+                    .substringBefore(":")
+            }.getOrNull()
     }
 }
