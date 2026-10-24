@@ -85,7 +85,13 @@ object OnAirAuthRepo {
                 val looksLikeLoginPage = isLoginForm(finalHtml)
                 val isAuthenticatedPage = hasAuthenticatedMarker(finalHtml)
 
-                if (code in 200..399 && (isAuthenticatedPage || !looksLikeLoginPage)) {
+                if (code in 200..399 && isAuthenticatedPage) {
+                    saveJarSnapshot()
+                    emit(AuthResult.Success)
+                    return@use
+                }
+
+                if (code in 200..399 && !looksLikeLoginPage) {
                     saveJarSnapshot()
                     emit(AuthResult.Success)
                     return@use
@@ -146,7 +152,13 @@ object OnAirAuthRepo {
                 val looksLikeRegisterPage = isRegisterForm(finalHtml)
                 val isAuthenticatedPage = hasAuthenticatedMarker(finalHtml)
 
-                if (code in 200..399 && (isAuthenticatedPage || !looksLikeRegisterPage)) {
+                if (code in 200..399 && isAuthenticatedPage) {
+                    saveJarSnapshot()
+                    emit(AuthResult.Success)
+                    return@use
+                }
+
+                if (code in 200..399 && !looksLikeRegisterPage) {
                     saveJarSnapshot()
                     emit(AuthResult.Success)
                     return@use
@@ -203,13 +215,14 @@ object OnAirAuthRepo {
     }
 
     private fun saveJarSnapshot() {
-        OnAirNetwork.refreshCookieJarFromJar()
         OnAirCookieManager.replaceWithJarSnapshot()
         Log.d(
             TAG,
-            "saveJarSnapshot: jarNames=${OnAirCookieManager.parseToCookies(
-                OnAirCookieManager.cookiesRaw, baseUrl
-            ).map { it.name }}",
+            "saveJarSnapshot: names=${
+                OnAirCookieManager.parseToCookies(
+                    OnAirCookieManager.cookiesRaw, baseUrl
+                ).map { it.name }
+            }",
         )
     }
 
