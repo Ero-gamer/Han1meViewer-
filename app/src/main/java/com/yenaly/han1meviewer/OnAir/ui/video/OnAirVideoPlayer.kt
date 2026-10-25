@@ -191,6 +191,9 @@ fun OnAirVideoPlayer(
         } else if (currentUrl != url) {
             val wasPlaying = existing.playWhenReady
             val pos = existing.currentPosition
+            // Cleanly tear down the previous stream (HLS <-> progressive,
+            // or recovering from an errored stream) before swapping.
+            existing.stop()
             existing.setMediaSource(mediaSource)
             existing.prepare()
             if (pos > 0) existing.seekTo(pos)
