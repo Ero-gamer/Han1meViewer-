@@ -75,6 +75,7 @@ class OnAirVideoViewModel(application: Application) : AndroidViewModel(applicati
         private const val RESUME_THRESHOLD_MS = 5_000L
         private const val COMPLETE_GRACE_MS = 3_000L
         private const val QUALITY_FETCH_TIMEOUT_MS = 45_000L
+        private const val MAX_RECOVER_ATTEMPTS = 2
         private val QUALITY_PRIORITY = listOf("original", "480", "360", "240", "144")
     }
 
@@ -93,9 +94,11 @@ class OnAirVideoViewModel(application: Application) : AndroidViewModel(applicati
 
     private var loadJob: Job? = null
     private var extractJob: Job? = null
+    private var recoverJob: Job? = null
     private var currentVideoId: String = ""
     private var currentDetail: OnAirVideoDetail? = null
     private val qualityCache = mutableMapOf<String, QualityStream>()
+    private val recoverAttempts = mutableMapOf<String, Int>()
 
     init {
         OnAirHistoryRepo.init(application)
@@ -107,7 +110,10 @@ class OnAirVideoViewModel(application: Application) : AndroidViewModel(applicati
 
         extractJob?.cancel()
         extractJob = null
+        recoverJob?.cancel()
+        recoverJob = null
         qualityCache.clear()
+        recoverAttempts.clear()
 
         currentVideoId = videoId
         loadJob?.cancel()
@@ -302,6 +308,8 @@ class OnAirVideoViewModel(application: Application) : AndroidViewModel(applicati
         if (quality == s.currentQuality && s.activeStream?.state == StreamState.Ready) return
         if (s.pendingQuality == quality) return
 
+        recoverAttempts.remove(quality)
+
         val cached = qualityCache[quality]
         if (cached != null && cached.state == StreamState.Ready && cached.url.isNotBlank()) {
             val wasPlaying = s.playbackIntent == PlaybackIntent.Playing
@@ -448,6 +456,72 @@ class OnAirVideoViewModel(application: Application) : AndroidViewModel(applicati
 
     fun markStreamUnavailable(quality: String, reason: String? = null) {
         if (quality.isBlank()) return
+        val attempts = (recoverAttempts[quality] ?: 0) + 1
+        recoverAttempts[quality] = attempts
+        qualityCache.remove(quality)
+
+        if (attempts <= MAX_RECOVER_ATTEMPTS) {
+            Log.w(TAG, "markStreamUnavailable($quality) attempt $attempts/$MAX_RECOVER_ATTEMPTS — re-fetching")
+            extractJob?.cancel()
+            extractJob = viewModelScope.launch {
+                _playerState.update { s ->
+                    s.copy(
+                        pendingQuality = quality,
+                        streamsByQuality = s.streamsByQuality + (
+                                quality to QualityStream(
+                                    quality = quality,
+                                    state = StreamState.Loading,
+                                )
+                                ),
+                    )
+                }
+                val detail = currentDetail
+                if (detail == null) {
+                    _finalizeUnavailable(quality, reason)
+                    return@launch
+                }
+                val result: StreamResult? = try {
+                    withTimeoutOrNull(QUALITY_FETCH_TIMEOUT_MS) {
+                        OnAirStreamFetcher.fetch(detail.videoId, quality)
+                    }
+                } catch (e: CancellationException) {
+                    _playerState.update { it.copy(pendingQuality = null) }
+                    throw e
+                } catch (e: Exception) {
+                    Log.e(TAG, "recover fetch failed for $quality", e)
+                    null
+                }
+                if (result == null) {
+                    _finalizeUnavailable(quality, reason)
+                } else {
+                    recoverAttempts.remove(quality)
+                    val ready = QualityStream(
+                        quality = quality,
+                        url = result.url,
+                        mediaType = result.mediaType,
+                        isHls = result.isHls,
+                        state = StreamState.Ready,
+                    )
+                    qualityCache[quality] = ready
+                    _playerState.update { s ->
+                        s.copy(
+                            pendingQuality = null,
+                            currentQuality = quality,
+                            isReady = true,
+                            hasError = false,
+                            errorMessage = null,
+                            streamsByQuality = s.streamsByQuality + (quality to ready),
+                        )
+                    }
+                }
+            }
+            return
+        }
+
+        _finalizeUnavailable(quality, reason)
+    }
+
+    private fun _finalizeUnavailable(quality: String, reason: String?) {
         _playerState.update { s ->
             val updated = s.streamsByQuality.toMutableMap()
             updated[quality] = QualityStream(
@@ -480,6 +554,8 @@ class OnAirVideoViewModel(application: Application) : AndroidViewModel(applicati
     fun cancelPendingExtraction() {
         extractJob?.cancel()
         extractJob = null
+        recoverJob?.cancel()
+        recoverJob = null
         _playerState.update { it.copy(pendingQuality = null) }
     }
 
@@ -549,6 +625,7 @@ class OnAirVideoViewModel(application: Application) : AndroidViewModel(applicati
         super.onCleared()
         loadJob?.cancel()
         extractJob?.cancel()
+        recoverJob?.cancel()
         persistProgress()
     }
 }
