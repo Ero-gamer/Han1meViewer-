@@ -303,7 +303,8 @@ object OnAirNetworkRepo {
     fun getVideoDetail(videoId: String, quality: String? = null) = flow {
         emit(VideoLoadingState.Loading)
         try {
-            val watchUrl = OnAirNetwork.baseUrl.trimEnd('/') + "/watch/" + videoId
+            val watchUrl = OnAirNetwork.baseUrl.trimEnd('/') + "/watch/" + videoId +
+                    (quality?.takeIf { it.isNotBlank() }?.let { "?quality=$it" } ?: "")
             val result = retryWithBackoff {
                 val firstDetail = runCatching {
                     val response = OnAirNetwork.service.getWatchPage(

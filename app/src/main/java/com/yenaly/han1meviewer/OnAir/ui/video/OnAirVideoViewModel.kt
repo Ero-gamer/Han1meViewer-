@@ -95,7 +95,6 @@ class OnAirVideoViewModel(application: Application) : AndroidViewModel(applicati
     private var extractJob: Job? = null
     private var recoverJob: Job? = null
     private var fallbackJob: Job? = null
-    private var prefetchJob: Job? = null
     private var currentVideoId: String = ""
     private var currentDetail: OnAirVideoDetail? = null
     private val qualityCache = mutableMapOf<String, QualityStream>()
@@ -112,7 +111,6 @@ class OnAirVideoViewModel(application: Application) : AndroidViewModel(applicati
         extractJob?.cancel(); extractJob = null
         recoverJob?.cancel(); recoverJob = null
         fallbackJob?.cancel(); fallbackJob = null
-        prefetchJob?.cancel(); prefetchJob = null
         qualityCache.clear()
         recoverAttempts.clear()
 
@@ -124,7 +122,7 @@ class OnAirVideoViewModel(application: Application) : AndroidViewModel(applicati
             _showResumeBanner.value = false
             _resumePosition.value = 0L
 
-            OnAirNetworkRepo.getVideoDetail(videoId).collect { state ->
+            OnAirNetworkRepo.getVideoDetail(videoId, quality = "original").collect { state ->
                 _pageState.value = state
                 when (state) {
                     is VideoLoadingState.Success -> {
@@ -134,7 +132,6 @@ class OnAirVideoViewModel(application: Application) : AndroidViewModel(applicati
                         val preferred = preferredQuality ?: history?.lastQuality
                         applyInitialDetail(detail, preferred)
                         loadResumePosition(videoId)
-                        schedulePrefetchOriginal()
                         if (_playerState.value.activeStream?.state != StreamState.Ready) {
                             scheduleFallback()
                         }
@@ -186,17 +183,12 @@ class OnAirVideoViewModel(application: Application) : AndroidViewModel(applicati
 
         advertised.forEach { q ->
             if (q !in initialMap) {
-                initialMap[q] = QualityStream(
-                    quality = q,
-                    state = StreamState.Loading,
-                )
+                initialMap[q] = QualityStream(quality = q, state = StreamState.Loading)
             }
         }
 
         val chosen = when {
-            preferred != null && preferred == "original" &&
-                    initialMap["original"]?.state == StreamState.Ready -> "original"
-            "original" in initialMap -> "original"
+            initialMap["original"]?.state == StreamState.Ready -> "original"
             preferred != null && initialMap[preferred]?.state == StreamState.Ready -> preferred
             initialMap[detail.currentQuality]?.state == StreamState.Ready -> detail.currentQuality
             else -> initialMap.entries.firstOrNull { it.value.state == StreamState.Ready }?.key
@@ -224,42 +216,6 @@ class OnAirVideoViewModel(application: Application) : AndroidViewModel(applicati
         }
     }
 
-    private fun schedulePrefetchOriginal() {
-        prefetchJob?.cancel()
-        prefetchJob = viewModelScope.launch { prefetchOriginal() }
-    }
-
-    private suspend fun prefetchOriginal() {
-        if (currentDetail == null) return
-        val existing = _playerState.value.streamsByQuality["original"]
-        if (existing?.state == StreamState.Ready && !existing.url.isNullOrBlank()) return
-        if (existing?.state == StreamState.Loading && _playerState.value.pendingQuality == "original") {
-            return
-        }
-        val result = fetchQualityStreamOrNull("original") ?: return
-        val ready = QualityStream(
-            quality = "original",
-            url = result.url,
-            mediaType = result.mediaType,
-            isHls = result.isHls,
-            state = StreamState.Ready,
-        )
-        qualityCache["original"] = ready
-        _playerState.update { s ->
-            if (s.currentQuality == "original") {
-                s.copy(
-                    pendingQuality = null,
-                    isReady = true,
-                    hasError = false,
-                    errorMessage = null,
-                    streamsByQuality = s.streamsByQuality + ("original" to ready),
-                )
-            } else {
-                s.copy(streamsByQuality = s.streamsByQuality + ("original" to ready))
-            }
-        }
-    }
-
     private fun scheduleFallback() {
         fallbackJob?.cancel()
         fallbackJob = viewModelScope.launch { advanceFallback() }
@@ -281,8 +237,6 @@ class OnAirVideoViewModel(application: Application) : AndroidViewModel(applicati
                             isReady = true,
                             hasError = false,
                             errorMessage = null,
-                            playbackIntent = if (it.playbackIntent == PlaybackIntent.NotStarted)
-                                PlaybackIntent.NotStarted else it.playbackIntent,
                         )
                     }
                 }
@@ -597,7 +551,6 @@ class OnAirVideoViewModel(application: Application) : AndroidViewModel(applicati
         extractJob?.cancel(); extractJob = null
         recoverJob?.cancel(); recoverJob = null
         fallbackJob?.cancel(); fallbackJob = null
-        prefetchJob?.cancel(); prefetchJob = null
         _playerState.update { it.copy(pendingQuality = null) }
     }
 
@@ -669,7 +622,6 @@ class OnAirVideoViewModel(application: Application) : AndroidViewModel(applicati
         extractJob?.cancel()
         recoverJob?.cancel()
         fallbackJob?.cancel()
-        prefetchJob?.cancel()
         persistProgress()
     }
 }
