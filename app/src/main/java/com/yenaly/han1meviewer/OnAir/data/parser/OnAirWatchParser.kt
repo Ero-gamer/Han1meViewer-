@@ -191,11 +191,19 @@ object OnAirWatchParser {
             ?.takeIf { it.isNotBlank() }
         val fromCanonical = canonical?.let(OnAirHtmlUtils::extractVideoId)
         if (fromCanonical != null) return fromCanonical
+
         val ogUrl = doc.selectFirst("meta[property=og:url]")?.attr("content")
             ?.takeIf { it.isNotBlank() }
         val fromOg = ogUrl?.let(OnAirHtmlUtils::extractVideoId)
         if (fromOg != null) return fromOg
-        return OnAirHtmlUtils.extractVideoId(baseUrl) ?: ""
+
+        val fromBase = OnAirHtmlUtils.extractVideoId(baseUrl)
+        if (fromBase != null) return fromBase
+
+        val segment = OnAirHtmlUtils.extractPathSegment(baseUrl)
+        if (segment != null && segment.all(Char::isDigit)) return segment
+
+        return ""
     }
 
     private fun parseVideoTags(doc: Document): List<OnAirVideoTag> {

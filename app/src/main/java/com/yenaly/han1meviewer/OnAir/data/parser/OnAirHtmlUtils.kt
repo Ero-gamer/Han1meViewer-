@@ -41,13 +41,15 @@ internal object OnAirHtmlUtils {
 
     fun extractVideoId(href: String?): String? {
         if (href.isNullOrBlank()) return null
-        val segment = href.trimEnd('/').substringAfterLast('/')
+        val path = href.substringBefore('?').substringBefore('#')
+        val segment = path.trimEnd('/').substringAfterLast('/')
         return segment.takeIf { it.isNotEmpty() && it.all(Char::isDigit) }
     }
 
     fun extractPathSegment(href: String?): String? {
         if (href.isNullOrBlank()) return null
-        return href.trimEnd('/').substringAfterLast('/').takeIf { it.isNotEmpty() }
+        val path = href.substringBefore('?').substringBefore('#')
+        return path.trimEnd('/').substringAfterLast('/').takeIf { it.isNotEmpty() }
     }
 
     fun Element.optionalText(selector: String): String? =

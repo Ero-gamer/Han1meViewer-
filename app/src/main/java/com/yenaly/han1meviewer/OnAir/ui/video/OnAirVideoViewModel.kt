@@ -18,17 +18,9 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 
-enum class PlaybackIntent {
-    NotStarted,
-    Playing,
-    Paused,
-}
+enum class PlaybackIntent { NotStarted, Playing, Paused }
 
-enum class StreamState {
-    Loading,
-    Ready,
-    Error,
-}
+enum class StreamState { Loading, Ready, Error }
 
 data class QualityStream(
     val quality: String,
@@ -55,17 +47,10 @@ data class OnAirPlayerState(
     val errorMessage: String? = null,
     val playbackIntent: PlaybackIntent = PlaybackIntent.NotStarted,
 ) {
-    val activeStream: QualityStream?
-        get() = streamsByQuality[currentQuality]
-
-    val activeUrl: String?
-        get() = activeStream?.url?.takeIf { it.isNotBlank() }
-
-    val activeMediaType: String?
-        get() = activeStream?.mediaType
-
-    val isSwitchLoading: Boolean
-        get() = pendingQuality != null
+    val activeStream: QualityStream? get() = streamsByQuality[currentQuality]
+    val activeUrl: String? get() = activeStream?.url?.takeIf { it.isNotBlank() }
+    val activeMediaType: String? get() = activeStream?.mediaType
+    val isSwitchLoading: Boolean get() = pendingQuality != null
 }
 
 class OnAirVideoViewModel(application: Application) : AndroidViewModel(application) {
@@ -126,7 +111,11 @@ class OnAirVideoViewModel(application: Application) : AndroidViewModel(applicati
                 _pageState.value = state
                 when (state) {
                     is VideoLoadingState.Success -> {
-                        val detail = state.info
+                        var detail = state.info
+                        if (detail.videoId.isBlank()) {
+                            detail = detail.copy(videoId = videoId)
+                            _pageState.value = VideoLoadingState.Success(detail)
+                        }
                         currentDetail = detail
                         val history = OnAirHistoryRepo.getByVideoId(videoId)
                         val preferred = preferredQuality ?: history?.lastQuality
@@ -245,27 +234,25 @@ class OnAirVideoViewModel(application: Application) : AndroidViewModel(applicati
         }
 
         for (q in candidates) {
-            val result = fetchQualityStreamOrNull(q)
-            if (result != null) {
-                val ready = QualityStream(
-                    quality = q,
-                    url = result.url,
-                    mediaType = result.mediaType,
-                    isHls = result.isHls,
-                    state = StreamState.Ready,
+            val result = fetchQualityStreamOrNull(q) ?: continue
+            val ready = QualityStream(
+                quality = q,
+                url = result.url,
+                mediaType = result.mediaType,
+                isHls = result.isHls,
+                state = StreamState.Ready,
+            )
+            qualityCache[q] = ready
+            _playerState.update {
+                it.copy(
+                    currentQuality = q,
+                    isReady = true,
+                    hasError = false,
+                    errorMessage = null,
+                    streamsByQuality = it.streamsByQuality + (q to ready),
                 )
-                qualityCache[q] = ready
-                _playerState.update {
-                    it.copy(
-                        currentQuality = q,
-                        isReady = true,
-                        hasError = false,
-                        errorMessage = null,
-                        streamsByQuality = it.streamsByQuality + (q to ready),
-                    )
-                }
-                return
             }
+            return
         }
 
         _playerState.update {
@@ -283,10 +270,7 @@ class OnAirVideoViewModel(application: Application) : AndroidViewModel(applicati
             it.copy(
                 pendingQuality = quality,
                 streamsByQuality = it.streamsByQuality + (
-                        quality to QualityStream(
-                            quality = quality,
-                            state = StreamState.Loading,
-                        )
+                        quality to QualityStream(quality = quality, state = StreamState.Loading)
                         ),
             )
         }
@@ -329,15 +313,11 @@ class OnAirVideoViewModel(application: Application) : AndroidViewModel(applicati
         }
     }
 
-    fun dismissResumeBanner() {
-        _showResumeBanner.value = false
-    }
+    fun dismissResumeBanner() { _showResumeBanner.value = false }
 
     fun applyResume() {
         val pos = _resumePosition.value
-        if (pos > 0) {
-            _playerState.update { it.copy(position = pos) }
-        }
+        if (pos > 0) _playerState.update { it.copy(position = pos) }
         _showResumeBanner.value = false
     }
 
@@ -358,19 +338,13 @@ class OnAirVideoViewModel(application: Application) : AndroidViewModel(applicati
             return
         }
         _playerState.update {
-            it.copy(
-                playbackIntent = PlaybackIntent.Playing,
-                isPlaying = true,
-            )
+            it.copy(playbackIntent = PlaybackIntent.Playing, isPlaying = true)
         }
     }
 
     fun pausePlayback() {
         _playerState.update {
-            it.copy(
-                playbackIntent = PlaybackIntent.Paused,
-                isPlaying = false,
-            )
+            it.copy(playbackIntent = PlaybackIntent.Paused, isPlaying = false)
         }
     }
 
@@ -380,10 +354,7 @@ class OnAirVideoViewModel(application: Application) : AndroidViewModel(applicati
             return
         }
         _playerState.update {
-            it.copy(
-                playbackIntent = PlaybackIntent.Playing,
-                isPlaying = true,
-            )
+            it.copy(playbackIntent = PlaybackIntent.Playing, isPlaying = true)
         }
     }
 
@@ -414,8 +385,7 @@ class OnAirVideoViewModel(application: Application) : AndroidViewModel(applicati
         if (currentDetail == null) return
         extractJob?.cancel()
         extractJob = viewModelScope.launch {
-            val result = fetchQualityStreamOrNull(quality)
-            if (result == null) return@launch
+            val result = fetchQualityStreamOrNull(quality) ?: return@launch
             val ready = QualityStream(
                 quality = quality,
                 url = result.url,
@@ -455,10 +425,7 @@ class OnAirVideoViewModel(application: Application) : AndroidViewModel(applicati
                     s.copy(
                         pendingQuality = quality,
                         streamsByQuality = s.streamsByQuality + (
-                                quality to QualityStream(
-                                    quality = quality,
-                                    state = StreamState.Loading,
-                                )
+                                quality to QualityStream(quality = quality, state = StreamState.Loading)
                                 ),
                     )
                 }
@@ -555,16 +522,10 @@ class OnAirVideoViewModel(application: Application) : AndroidViewModel(applicati
     }
 
     fun copyStreamUrl(): String? = _playerState.value.activeUrl
-
     fun currentQualityLabel(): String = _playerState.value.currentQuality
 
-    fun setSpeed(speed: Float) {
-        _playerState.update { it.copy(speed = speed) }
-    }
-
-    fun setFullscreen(fullscreen: Boolean) {
-        _playerState.update { it.copy(isFullscreen = fullscreen) }
-    }
+    fun setSpeed(speed: Float) { _playerState.update { it.copy(speed = speed) } }
+    fun setFullscreen(fullscreen: Boolean) { _playerState.update { it.copy(isFullscreen = fullscreen) } }
 
     fun onPositionUpdate(position: Long, duration: Long) {
         _playerState.update {
