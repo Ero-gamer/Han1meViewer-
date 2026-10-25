@@ -129,6 +129,13 @@ fun OnAirVideoScreen(
                 onSpeedChange = viewModel::setSpeed,
                 onToggleFullscreen = { viewModel.setFullscreen(false) },
                 onRetryQuality = { viewModel.selectQuality(it) },
+                onStreamUnavailable = viewModel::markStreamUnavailable,
+                onTokenExpired = {
+                    viewModel.markStreamUnavailable(
+                        playerState.currentQuality,
+                        "Session expired — sign in again to refresh stream URLs.",
+                    )
+                },
                 coverUrl = cover,
                 modifier = Modifier.fillMaxSize(),
             )
@@ -192,6 +199,13 @@ fun OnAirVideoScreen(
                             onSpeedChange = viewModel::setSpeed,
                             onToggleFullscreen = { viewModel.setFullscreen(true) },
                             onRetryQuality = { viewModel.selectQuality(it) },
+                            onStreamUnavailable = viewModel::markStreamUnavailable,
+                            onTokenExpired = {
+                                viewModel.markStreamUnavailable(
+                                    playerState.currentQuality,
+                                    "Session expired — sign in again to refresh stream URLs.",
+                                )
+                            },
                             coverUrl = detail.recommendedVideos.firstOrNull()?.thumbUrl,
                         )
 

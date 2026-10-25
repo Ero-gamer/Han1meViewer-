@@ -69,6 +69,7 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.hls.HlsMediaSource
 import androidx.media3.exoplayer.source.ProgressiveMediaSource
 import coil3.compose.AsyncImage
+import com.yenaly.han1meviewer.OnAir.data.remote.OnAirCookieManager
 import com.yenaly.han1meviewer.OnAir.data.remote.OnAirNetwork
 import com.yenaly.han1meviewer.ui.component.GlobalToasts
 import kotlinx.coroutines.delay
@@ -88,6 +89,7 @@ fun OnAirVideoPlayer(
     onRetryQuality: (String) -> Unit = { onQualityChange(it) },
     onPlayerReady: (ExoPlayer) -> Unit = {},
     onTokenExpired: (() -> Unit)? = null,
+    onStreamUnavailable: ((String) -> Unit)? = null,
     modifier: Modifier = Modifier,
     coverUrl: String? = null,
 ) {
@@ -123,12 +125,19 @@ fun OnAirVideoPlayer(
         if (url.isNullOrBlank()) return@LaunchedEffect
 
         val base = OnAirNetwork.baseUrl
-        val httpFactory = DefaultHttpDataSource.Factory().setDefaultRequestProperties(
-            hashMapOf(
-                "Referer" to base,
-                "Origin" to base.trimEnd('/'),
-            )
+        val cookieHeader = OnAirCookieManager.cookiesRaw
+        val mediaHeaders = mutableMapOf(
+            "Referer" to base,
+            "Origin" to base.trimEnd('/'),
+            "User-Agent" to "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 " +
+                    "(KHTML, like Gecko) Chrome/137.0.0.0 Mobile Safari/537.36",
         )
+        if (cookieHeader.isNotBlank()) {
+            mediaHeaders["Cookie"] = cookieHeader
+        }
+
+        val httpFactory = DefaultHttpDataSource.Factory()
+            .setDefaultRequestProperties(mediaHeaders)
         val dsFactory = DefaultDataSource.Factory(context, httpFactory)
         val mediaItem = androidx.media3.common.MediaItem.Builder().setUri(url).build()
         val isHls = state.activeStream?.isHls == true || url.contains(".m3u8")
@@ -163,10 +172,16 @@ fun OnAirVideoPlayer(
 
                 override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
                     val msg = error.cause?.message.orEmpty()
-                    if (msg.contains("403") || msg.contains("401") ||
-                        msg.contains("Unauthorized") || msg.contains("Forbidden")
-                    ) {
-                        onTokenExpired?.invoke()
+                    val whole = "${error.errorCodeName} $msg".lowercase()
+                    when {
+                        whole.contains("404") || whole.contains("not found") -> {
+                            onStreamUnavailable?.invoke(state.currentQuality)
+                        }
+
+                        msg.contains("403") || msg.contains("401") ||
+                                msg.contains("Unauthorized") || msg.contains("Forbidden") -> {
+                            onTokenExpired?.invoke()
+                        }
                     }
                 }
             })

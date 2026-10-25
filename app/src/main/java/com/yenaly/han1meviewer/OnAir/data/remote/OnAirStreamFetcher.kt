@@ -3,6 +3,9 @@ package com.yenaly.han1meviewer.OnAir.data.remote
 import android.util.Log
 import com.yenaly.han1meviewer.OnAir.data.model.StreamResult
 import com.yenaly.han1meviewer.OnAir.data.parser.OnAirWatchParser
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import okhttp3.Request
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Document
 
@@ -38,6 +41,10 @@ object OnAirStreamFetcher {
                 val hlsAttr = videoEl.attr("data-hls-src").takeIf { it.isNotBlank() }
                 if (hlsAttr != null) {
                     val abs = resolve(hlsAttr, base) ?: return null
+                    if (!probeMediaUrl(abs)) {
+                        Log.w(TAG, "original HLS is dead (404/403): $abs")
+                        return null
+                    }
                     Log.d(TAG, "original HLS: $abs")
                     return StreamResult(
                         quality = "original",
@@ -62,6 +69,14 @@ object OnAirStreamFetcher {
                     }
                     if (!matches) continue
                     val abs = resolve(raw, base) ?: continue
+                    if (abs.contains("/hls/", ignoreCase = true) ||
+                        abs.contains(".m3u8", ignoreCase = true)
+                    ) {
+                        if (!probeMediaUrl(abs)) {
+                            Log.w(TAG, "HLS source is dead (404/403): $abs")
+                            continue
+                        }
+                    }
                     val mime = source.attr("type").takeIf { it.isNotBlank() }
                         ?: guessMime(abs)
                     Log.d(TAG, "quality=$quality source: $abs")
@@ -74,11 +89,38 @@ object OnAirStreamFetcher {
                 }
             }
 
-            OnAirWatchParser.parseStreamFromPage(html, watchUrl, quality)
+            val parsed = OnAirWatchParser.parseStreamFromPage(html, watchUrl, quality)
+            if (parsed != null && parsed.isHls && !probeMediaUrl(parsed.url)) {
+                Log.w(TAG, "parsed HLS is dead (404/403): ${parsed.url}")
+                return null
+            }
+            parsed
         } catch (e: Exception) {
             Log.e(TAG, "fetch($videoId, $quality) failed", e)
             null
         }
+    }
+
+    private suspend fun probeMediaUrl(url: String): Boolean = withContext(Dispatchers.IO) {
+        runCatching {
+            val base = OnAirNetwork.baseUrl
+            val cookie = OnAirCookieManager.cookiesRaw
+            val req = Request.Builder()
+                .url(url)
+                .head()
+                .header("Referer", base)
+                .header("Origin", base.trimEnd('/'))
+                .header(
+                    "User-Agent",
+                    "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 " +
+                            "(KHTML, like Gecko) Chrome/137.0.0.0 Mobile Safari/537.36",
+                )
+                .apply { if (cookie.isNotBlank()) header("Cookie", cookie) }
+                .build()
+            OnAirNetwork.sharedOkHttpClient.newCall(req).execute().use { resp ->
+                resp.isSuccessful || resp.code == 206
+            }
+        }.getOrDefault(false)
     }
 
     private fun qualityOf(url: String): String? {
