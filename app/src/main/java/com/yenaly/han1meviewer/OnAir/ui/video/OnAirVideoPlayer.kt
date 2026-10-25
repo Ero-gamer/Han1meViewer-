@@ -62,6 +62,7 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.DefaultHttpDataSource
@@ -170,18 +171,29 @@ fun OnAirVideoPlayer(
                     showControls = true
                 }
 
-                override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
+                override fun onPlayerError(error: PlaybackException) {
+                    val code = error.errorCode
                     val msg = error.cause?.message.orEmpty()
                     val whole = "${error.errorCodeName} $msg".lowercase()
-                    when {
-                        whole.contains("404") || whole.contains("not found") -> {
-                            onStreamUnavailable?.invoke(state.currentQuality)
-                        }
 
-                        msg.contains("403") || msg.contains("401") ||
-                                msg.contains("Unauthorized") || msg.contains("Forbidden") -> {
-                            onTokenExpired?.invoke()
-                        }
+                    val isForbidden = whole.contains("403") ||
+                            whole.contains("401") ||
+                            whole.contains("unauthorized") ||
+                            whole.contains("forbidden")
+
+                    val isUnsupported =
+                        code == PlaybackException.ERROR_CODE_PARSING_CONTAINER_MALFORMED ||
+                                code == PlaybackException.ERROR_CODE_PARSING_CONTAINER_UNSUPPORTED ||
+                                code == PlaybackException.ERROR_CODE_PARSING_MANIFEST_MALFORMED ||
+                                code == PlaybackException.ERROR_CODE_PARSING_MANIFEST_UNSUPPORTED ||
+                                whole.contains("extractor") ||
+                                whole.contains("could read the stream") ||
+                                whole.contains("unrecognized")
+
+                    when {
+                        isForbidden -> onTokenExpired?.invoke()
+                        isUnsupported -> onStreamUnavailable?.invoke(state.currentQuality)
+                        else -> onStreamUnavailable?.invoke(state.currentQuality)
                     }
                 }
             })
@@ -191,8 +203,6 @@ fun OnAirVideoPlayer(
         } else if (currentUrl != url) {
             val wasPlaying = existing.playWhenReady
             val pos = existing.currentPosition
-            // Cleanly tear down the previous stream (HLS <-> progressive,
-            // or recovering from an errored stream) before swapping.
             existing.stop()
             existing.setMediaSource(mediaSource)
             existing.prepare()
@@ -401,7 +411,9 @@ fun OnAirVideoPlayer(
                                 expanded = showQualityMenu,
                                 onDismissRequest = { showQualityMenu = false },
                             ) {
-                                state.streamsByQuality.keys.forEach { q ->
+                                val ordered = QUALITY_ORDER.filter { it in state.streamsByQuality } +
+                                        state.streamsByQuality.keys.filter { it !in QUALITY_ORDER }
+                                ordered.forEach { q ->
                                     val stream = state.streamsByQuality[q]
                                     val isLoading = stream?.state == StreamState.Loading ||
                                             state.pendingQuality == q
@@ -434,14 +446,14 @@ fun OnAirVideoPlayer(
 
                                                     else -> Spacer(Modifier.width(16.dp))
                                                 }
-                                                Text(q)
+                                                Text(qualityLabel(q))
                                             }
                                         },
                                         onClick = {
                                             showQualityMenu = false
                                             if (!isCurrent) onQualityChange(q)
                                         },
-                                        enabled = !isLoading,
+                                        enabled = !isLoading && !isCurrent,
                                     )
                                 }
                             }
@@ -568,7 +580,7 @@ fun OnAirVideoPlayer(
                             modifier = Modifier.size(36.dp),
                         )
                         Text(
-                            text = "No stream for ${state.currentQuality}",
+                            text = "No stream for ${qualityLabel(state.currentQuality)}",
                             color = Color.White,
                             style = MaterialTheme.typography.bodyMedium,
                         )
@@ -600,6 +612,11 @@ fun OnAirVideoPlayer(
         }
     }
 }
+
+private val QUALITY_ORDER = listOf("original", "720", "480", "360", "240", "144")
+
+private fun qualityLabel(quality: String): String =
+    if (quality == "original") "Original" else "${quality}p"
 
 private fun formatTime(ms: Long): String {
     val total = (ms / 1000).coerceAtLeast(0)
@@ -641,7 +658,7 @@ fun OnAirStreamUrlBar(
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Text(
-            text = quality,
+            text = qualityLabel(quality),
             style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.primary,
         )

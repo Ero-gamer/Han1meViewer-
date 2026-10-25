@@ -75,7 +75,6 @@ class OnAirVideoViewModel(application: Application) : AndroidViewModel(applicati
         private const val RESUME_THRESHOLD_MS = 5_000L
         private const val COMPLETE_GRACE_MS = 3_000L
         private const val QUALITY_FETCH_TIMEOUT_MS = 45_000L
-        private const val MAX_RECOVER_ATTEMPTS = 2
         private val QUALITY_PRIORITY = listOf("original", "480", "360", "240", "144")
     }
 
@@ -96,6 +95,7 @@ class OnAirVideoViewModel(application: Application) : AndroidViewModel(applicati
     private var extractJob: Job? = null
     private var recoverJob: Job? = null
     private var fallbackJob: Job? = null
+    private var prefetchJob: Job? = null
     private var currentVideoId: String = ""
     private var currentDetail: OnAirVideoDetail? = null
     private val qualityCache = mutableMapOf<String, QualityStream>()
@@ -112,6 +112,7 @@ class OnAirVideoViewModel(application: Application) : AndroidViewModel(applicati
         extractJob?.cancel(); extractJob = null
         recoverJob?.cancel(); recoverJob = null
         fallbackJob?.cancel(); fallbackJob = null
+        prefetchJob?.cancel(); prefetchJob = null
         qualityCache.clear()
         recoverAttempts.clear()
 
@@ -133,6 +134,7 @@ class OnAirVideoViewModel(application: Application) : AndroidViewModel(applicati
                         val preferred = preferredQuality ?: history?.lastQuality
                         applyInitialDetail(detail, preferred)
                         loadResumePosition(videoId)
+                        schedulePrefetchOriginal()
                         if (_playerState.value.activeStream?.state != StreamState.Ready) {
                             scheduleFallback()
                         }
@@ -177,25 +179,24 @@ class OnAirVideoViewModel(application: Application) : AndroidViewModel(applicati
             }
         }
 
-        detail.qualityLinksByQuality.keys.forEach { q ->
+        val advertised = LinkedHashSet<String>()
+        advertised.add("original")
+        QUALITY_PRIORITY.forEach { advertised.add(it) }
+        detail.qualityLinksByQuality.keys.forEach { advertised.add(it) }
+
+        advertised.forEach { q ->
             if (q !in initialMap) {
                 initialMap[q] = QualityStream(
                     quality = q,
-                    state = StreamState.Error,
-                    errorMessage = "Stream URL not present on page",
+                    state = StreamState.Loading,
                 )
             }
         }
 
-        if (initialMap.isEmpty()) {
-            initialMap[detail.currentQuality] = QualityStream(
-                quality = detail.currentQuality,
-                state = StreamState.Error,
-                errorMessage = "No stream available on this video",
-            )
-        }
-
         val chosen = when {
+            preferred != null && preferred == "original" &&
+                    initialMap["original"]?.state == StreamState.Ready -> "original"
+            "original" in initialMap -> "original"
             preferred != null && initialMap[preferred]?.state == StreamState.Ready -> preferred
             initialMap[detail.currentQuality]?.state == StreamState.Ready -> detail.currentQuality
             else -> initialMap.entries.firstOrNull { it.value.state == StreamState.Ready }?.key
@@ -214,9 +215,8 @@ class OnAirVideoViewModel(application: Application) : AndroidViewModel(applicati
                 currentQuality = chosen,
                 streamsByQuality = initialMap,
                 isLoading = false,
-                hasError = !chosenReady,
-                errorMessage = if (!chosenReady)
-                    "OnAir has no playable stream for this video" else null,
+                hasError = false,
+                errorMessage = null,
                 isReady = chosenReady,
                 playbackIntent = PlaybackIntent.NotStarted,
                 pendingQuality = null,
@@ -224,17 +224,50 @@ class OnAirVideoViewModel(application: Application) : AndroidViewModel(applicati
         }
     }
 
-    private fun scheduleFallback() {
-        fallbackJob?.cancel()
-        fallbackJob = viewModelScope.launch {
-            autoFetchFallbackQuality()
+    private fun schedulePrefetchOriginal() {
+        prefetchJob?.cancel()
+        prefetchJob = viewModelScope.launch { prefetchOriginal() }
+    }
+
+    private suspend fun prefetchOriginal() {
+        if (currentDetail == null) return
+        val existing = _playerState.value.streamsByQuality["original"]
+        if (existing?.state == StreamState.Ready && !existing.url.isNullOrBlank()) return
+        if (existing?.state == StreamState.Loading && _playerState.value.pendingQuality == "original") {
+            return
+        }
+        val result = fetchQualityStreamOrNull("original") ?: return
+        val ready = QualityStream(
+            quality = "original",
+            url = result.url,
+            mediaType = result.mediaType,
+            isHls = result.isHls,
+            state = StreamState.Ready,
+        )
+        qualityCache["original"] = ready
+        _playerState.update { s ->
+            if (s.currentQuality == "original") {
+                s.copy(
+                    pendingQuality = null,
+                    isReady = true,
+                    hasError = false,
+                    errorMessage = null,
+                    streamsByQuality = s.streamsByQuality + ("original" to ready),
+                )
+            } else {
+                s.copy(streamsByQuality = s.streamsByQuality + ("original" to ready))
+            }
         }
     }
 
-    private suspend fun autoFetchFallbackQuality() {
+    private fun scheduleFallback() {
+        fallbackJob?.cancel()
+        fallbackJob = viewModelScope.launch { advanceFallback() }
+    }
+
+    private suspend fun advanceFallback() {
         val advertised = _playerState.value.streamsByQuality.keys
         if (advertised.isEmpty()) return
-
         val candidates = QUALITY_PRIORITY.filter { it in advertised }
         if (candidates.isEmpty()) return
 
@@ -248,6 +281,8 @@ class OnAirVideoViewModel(application: Application) : AndroidViewModel(applicati
                             isReady = true,
                             hasError = false,
                             errorMessage = null,
+                            playbackIntent = if (it.playbackIntent == PlaybackIntent.NotStarted)
+                                PlaybackIntent.NotStarted else it.playbackIntent,
                         )
                     }
                 }
@@ -422,7 +457,7 @@ class OnAirVideoViewModel(application: Application) : AndroidViewModel(applicati
             return
         }
 
-        val detail = currentDetail ?: return
+        if (currentDetail == null) return
         extractJob?.cancel()
         extractJob = viewModelScope.launch {
             val result = fetchQualityStreamOrNull(quality)
@@ -452,12 +487,14 @@ class OnAirVideoViewModel(application: Application) : AndroidViewModel(applicati
 
     fun markStreamUnavailable(quality: String, reason: String? = null) {
         if (quality.isBlank()) return
+        val isOriginal = quality == "original"
+        val maxAttempts = if (isOriginal) 2 else 1
         val attempts = (recoverAttempts[quality] ?: 0) + 1
         recoverAttempts[quality] = attempts
         qualityCache.remove(quality)
 
-        if (attempts <= MAX_RECOVER_ATTEMPTS) {
-            Log.w(TAG, "markStreamUnavailable($quality) attempt $attempts/$MAX_RECOVER_ATTEMPTS — re-fetching")
+        if (attempts <= maxAttempts) {
+            Log.w(TAG, "markStreamUnavailable($quality) attempt $attempts/$maxAttempts — re-fetching")
             recoverJob?.cancel()
             recoverJob = viewModelScope.launch {
                 _playerState.update { s ->
@@ -523,16 +560,14 @@ class OnAirVideoViewModel(application: Application) : AndroidViewModel(applicati
             updated[quality] = QualityStream(
                 quality = quality,
                 state = StreamState.Error,
-                errorMessage = reason ?: "OnAir returns 404 for $quality (not produced yet)",
+                errorMessage = reason ?: "Quality $quality unavailable",
             )
             qualityCache.remove(quality)
 
             val isCurrent = s.currentQuality == quality
             s.copy(
-                hasError = isCurrent,
-                errorMessage = if (isCurrent)
-                    "OnAir has no $quality stream for this video. Try another quality."
-                else s.errorMessage,
+                hasError = false,
+                errorMessage = null,
                 streamsByQuality = updated,
                 pendingQuality = null,
                 isPlaying = if (isCurrent) false else s.isPlaying,
@@ -540,20 +575,29 @@ class OnAirVideoViewModel(application: Application) : AndroidViewModel(applicati
             )
         }
 
-        val next = QUALITY_PRIORITY.firstOrNull { q ->
-            q != quality && _playerState.value.streamsByQuality[q]?.state == StreamState.Error
+        val advertised = _playerState.value.streamsByQuality.keys
+        val candidates = QUALITY_PRIORITY.filter { it in advertised && it != quality }
+        val next = candidates.firstOrNull { q ->
+            _playerState.value.streamsByQuality[q]?.state == StreamState.Error
         } ?: _playerState.value.streamsByQuality
             .filterValues { it.state == StreamState.Ready && it.url.isNotBlank() }
             .keys
             .firstOrNull { it != quality }
 
-        if (next != null) selectQuality(next) else scheduleFallback()
+        if (next != null) {
+            Log.d(TAG, "cascading $quality -> $next")
+            selectQuality(next)
+        } else {
+            Log.d(TAG, "no more qualities after $quality")
+            scheduleFallback()
+        }
     }
 
     fun cancelPendingExtraction() {
         extractJob?.cancel(); extractJob = null
         recoverJob?.cancel(); recoverJob = null
         fallbackJob?.cancel(); fallbackJob = null
+        prefetchJob?.cancel(); prefetchJob = null
         _playerState.update { it.copy(pendingQuality = null) }
     }
 
@@ -625,6 +669,7 @@ class OnAirVideoViewModel(application: Application) : AndroidViewModel(applicati
         extractJob?.cancel()
         recoverJob?.cancel()
         fallbackJob?.cancel()
+        prefetchJob?.cancel()
         persistProgress()
     }
 }

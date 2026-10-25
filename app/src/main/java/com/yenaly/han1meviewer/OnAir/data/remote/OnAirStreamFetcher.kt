@@ -109,6 +109,9 @@ object OnAirStreamFetcher {
     }
 
     private suspend fun probeMediaUrl(url: String): Boolean = withContext(Dispatchers.IO) {
+        if (url.contains("/streamq/", ignoreCase = true)) {
+            return@withContext true
+        }
         runCatching {
             val base = OnAirNetwork.baseUrl
             val cookie = OnAirCookieManager.cookiesRaw
