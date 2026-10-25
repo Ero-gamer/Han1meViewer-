@@ -63,7 +63,7 @@ object OnAirStreamFetcher {
                             abs.contains("/hls/", ignoreCase = true)
 
                     if (!probeMediaUrl(abs)) {
-                        Log.w(TAG, "source is dead (404/403) — skipping: $abs")
+                        Log.w(TAG, "source failed validation — skipping: $abs")
                         continue
                     }
 
@@ -92,18 +92,14 @@ object OnAirStreamFetcher {
                             isHls = true,
                         )
                     } else {
-                        Log.w(TAG, "original HLS fallback is dead: ${abs ?: hlsAttr}")
+                        Log.w(TAG, "original HLS fallback rejected: ${abs ?: hlsAttr}")
                     }
                 }
             }
 
             val parsed = OnAirWatchParser.parseStreamFromPage(html, watchUrl, quality)
-            if (parsed != null) {
-                if (probeMediaUrl(parsed.url)) {
-                    return parsed
-                }
-                Log.w(TAG, "parsed source is dead (404/403): ${parsed.url}")
-                return null
+            if (parsed != null && probeMediaUrl(parsed.url)) {
+                return parsed
             }
             null
         } catch (e: Exception) {
@@ -119,7 +115,7 @@ object OnAirStreamFetcher {
             val req = Request.Builder()
                 .url(url)
                 .get()
-                .header("Range", "bytes=0-0")
+                .header("Range", "bytes=0-15")
                 .header("Referer", base)
                 .header("Origin", base.trimEnd('/'))
                 .header(
@@ -130,7 +126,54 @@ object OnAirStreamFetcher {
                 .apply { if (cookie.isNotBlank()) header("Cookie", cookie) }
                 .build()
             OnAirNetwork.sharedOkHttpClient.newCall(req).execute().use { resp ->
-                resp.isSuccessful || resp.code == 206
+                if (!resp.isSuccessful && resp.code != 206) return@use false
+
+                val ctype = resp.header("Content-Type").orEmpty().lowercase()
+                val ctypeLooksLikeMedia = ctype.startsWith("video/") ||
+                        ctype.startsWith("audio/") ||
+                        ctype.contains("mpegurl") ||
+                        ctype.contains("octet-stream") ||
+                        ctype.contains("dash+xml") ||
+                        ctype.isBlank()
+
+                if (!ctypeLooksLikeMedia) {
+                    Log.w(TAG, "probe reject: unexpected Content-Type '$ctype' for $url")
+                    return@use false
+                }
+
+                val body = resp.body
+                val bytes = if (body != null) {
+                    runCatching {
+                        val source = body.source()
+                        val buffer = okio.Buffer()
+                        source.read(buffer, 16L)
+                        buffer.readByteArray()
+                    }.getOrNull()
+                } else null
+
+                if (bytes == null || bytes.isEmpty()) return@use false
+
+                if (bytes[0] == '<'.code.toByte()) {
+                    Log.w(TAG, "probe reject: HTML body at $url")
+                    return@use false
+                }
+
+                val isHlsText = bytes.size >= 7 &&
+                        bytes.copyOfRange(0, 7).toString(Charsets.US_ASCII) == "#EXTM3U"
+                if (isHlsText) return@use true
+
+                if (bytes.size >= 4) {
+                    val mp4 = bytes[4].toInt() == 'f'.code ||
+                            (bytes.size >= 8 &&
+                                    bytes.copyOfRange(4, 8).toString(Charsets.US_ASCII) == "ftyp")
+                    if (mp4) return@use true
+
+                    if (bytes[0] == 0x1A.toByte() && bytes[1] == 0x45.toByte() &&
+                        bytes[2] == 0xDF.toByte() && bytes[3] == 0xA3.toByte()
+                    ) return@use true
+                }
+
+                true
             }
         }.getOrDefault(false)
     }

@@ -49,6 +49,7 @@ import com.yenaly.han1meviewer.ui.component.content.ErrorContent
 import com.yenaly.han1meviewer.ui.component.content.LoadingContent
 import com.yenaly.han1meviewer.ui.screen.rememberRandomLoadingHint
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -78,11 +79,13 @@ fun OnAirVideoScreen(
         }
     }
 
-    LaunchedEffect(playerState.playbackIntent, playerState.position) {
+    LaunchedEffect(playerState.playbackIntent) {
         if (playerState.playbackIntent != PlaybackIntent.Playing) return@LaunchedEffect
-        delay(10_000L)
-        viewModel.persistProgress()
-        viewModel.markCompletedIfNeeded()
+        while (isActive) {
+            delay(10_000L)
+            viewModel.persistProgress()
+            viewModel.markCompletedIfNeeded()
+        }
     }
 
     LaunchedEffect(state) {
